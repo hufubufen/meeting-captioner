@@ -637,8 +637,10 @@ class CaptionerUI:
             self.audio_thread_mic = None
             if source_mode == "dual":
                 self.audio_thread = AudioCaptureThread(self.audio_queue, capture_mode="speaker")
-                self.audio_thread_mic = AudioCaptureThread(self.audio_queue, capture_mode="mic")
                 self.audio_thread.start()
+                # 错峰启动防御：强行延迟 400 毫秒再拉起麦克风采集。这能彻底避开 Windows CoreAudio (WASAPI) 并发枚举与 COM 重入时的底层硬件死锁。
+                time.sleep(0.4)
+                self.audio_thread_mic = AudioCaptureThread(self.audio_queue, capture_mode="mic")
                 self.audio_thread_mic.start()
             else:
                 self.audio_thread = AudioCaptureThread(self.audio_queue, capture_mode=source_mode)
