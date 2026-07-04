@@ -1,0 +1,26 @@
+# ============================================================================
+# 会议实时字幕与 AI 面试辅助工具核心库依赖要求
+# 支持通过 pip install -r requirements.txt 一键补全安装
+# ============================================================================
+
+# 核心 API 与 HTTP 客户端
+openai>=2.0.0
+httpx>=0.20.0
+pydantic>=2.0.0
+
+# 语音采集与数字信号处理
+soundcard>=0.4.0
+numpy>=1.20.0
+
+# 本地语音转文字 (ASR) 与深度学习
+funasr>=1.1.0
+transformers>=4.35.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# 各种格式文档加载解析 (docx, txt, md, pdf, ppt, xlsx)
+python-docx>=0.8.11
+pdfplumber>=0.10.0
+openpyxl>=3.0.0
+python-pptx>=0.6.0
+docx2txt>=0.8

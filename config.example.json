@@ -1,0 +1,8 @@
+{
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "您的通义千问API-KEY（在此处填入您的密钥后，重命名本文件为 config.json 即可）",
+    "model": "qwen-plus",
+    "rerank_model": "",
+    "system_prompt": "你是一个面试辅助助手。请根据提供的简历内容和知识库背景，针对面试官提出的问题，给出极具针对性、条理清晰且严谨的回答建议。",
+    "max_tokens": 500
+}

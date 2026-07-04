@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>面试辅助</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif;min-height:100vh;display:flex;flex-direction:column}
+.header{background:#161b22;padding:12px 16px;border-bottom:1px solid #30363d;text-align:center}
+.header h1{font-size:16px;color:#58a6ff;font-weight:500}
+.timestamp{font-size:11px;color:#484f58;margin-top:4px}
+.content{flex:1;padding:16px;overflow-y:auto}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;margin-bottom:12px}
+.card-label{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+.question{font-size:15px;color:#f0883e;line-height:1.5;word-break:break-word}
+.answer{font-size:14px;color:#c9d1d9;line-height:1.7;word-break:break-word;white-space:pre-wrap}
+.empty{text-align:center;color:#484f58;padding:60px 20px;font-size:14px}
+.empty .icon{font-size:40px;margin-bottom:12px}
+.footer{background:#161b22;padding:10px 16px;border-top:1px solid #30363d;text-align:center;font-size:11px;color:#484f58}
+.status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#3fb950;margin-right:4px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.stealth-bar{background:#161b22;padding:8px 16px;border-bottom:1px solid #30363d;text-align:center}
+.stealth-btn{padding:8px 20px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid #30363d;transition:all .2s}
+.stealth-btn.on{background:#da3633;color:#fff;border-color:#da3633}
+.stealth-btn.off{background:#238636;color:#fff;border-color:#238636}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>AI 面试辅助</h1>
+  <div class="timestamp"><span class="status-dot"></span><span id="ts">等待面试官提问...</span></div>
+</div>
+<div class="stealth-bar">
+  <button class="stealth-btn off" id="stealthBtn" onclick="toggleStealth()">🖥 伪装模式</button>
+</div>
+<div class="content" id="content">
+  <div class="empty">
+    <div class="icon">🎤</div>
+    <div>等待面试官提问...</div>
+    <div style="font-size:12px;margin-top:6px">问题和建议会实时显示在这里</div>
+  </div>
+</div>
+<div class="footer">仅本设备可见 &middot; 自动刷新</div>
+<script>
+var urlParams=new URLSearchParams(window.location.search);
+window._pin=urlParams.get("key")||"";
+if(!window._pin){
+  window._pin=window.location.hash.replace("#","")||"";
+}
+var lastTs="";
+function poll(){
+  fetch("/api/latest?key="+window._pin).then(r=>{if(!r.ok){throw "auth";}}).then(r=>r.json()).then(d=>{
+    if(!d.question) return;
+    document.getElementById("ts").textContent=d.timestamp;
+    var h="";
+    if(d.question){h+='<div class="card"><div class="card-label">\u{1f3cb} \u{9762}\u{8bd5}\u{5b98}\u{95ee}\u{9898}</div><div class="question">'+esc(d.question)+'</div></div>';}
+    if(d.answer){h+='<div class="card"><div class="card-label">\u{1f4a1} AI \u{5efa}\u{8bae}</div><div class="answer">'+esc(d.answer)+'</div></div>';}
+    document.getElementById("content").innerHTML=h||'<div class="empty"><div class="icon">\u{1f3a4}</div><div>\u{7b49}\u{5f85}\u{9762}\u{8bd5}\u{5b98}\u{63d0}\u{95ee}...</div></div>';
+  }).catch(()=>{});
+}
+function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+var evtSource=null;
+function startSSE(){
+  evtSource=new EventSource("/api/stream?key="+window._pin);
+  evtSource.onmessage=function(e){
+    var d=JSON.parse(e.data);
+    if(!d.question) return;
+    document.getElementById("ts").textContent=d.timestamp;
+    var h="";
+    if(d.question){h+='<div class="card"><div class="card-label">\u{1f3cb} \u{9762}\u{8bd5}\u{5b98}\u{95ee}\u{9898}</div><div class="question">'+esc(d.question)+'</div></div>';}
+    if(d.answer){h+='<div class="card"><div class="card-label">\u{1f4a1} AI \u{5efa}\u{8bae}</div><div class="answer">'+esc(d.answer)+'</div></div>';}
+    document.getElementById("content").innerHTML=h||'<div class="empty"><div class="icon">\u{1f3a4}</div><div>\u{7b49}\u{5f85}\u{9762}\u{8bd5}\u{5b98}\u{63d0}\u{95ee}...</div></div>';
+  };
+  evtSource.onerror=function(){evtSource.close();setTimeout(startPoll,1000);};
+}
+function startPoll(){setInterval(poll,500);poll();}
+startSSE();
+poll();
+var stealthOn=false;
+function toggleStealth(){
+  stealthOn=!stealthOn;
+  fetch("/api/stealth?key="+window._pin+"&mode="+(stealthOn?"on":"off")).then(r=>r.json()).then(d=>{
+    updateStealthBtn(d.stealth_mode);
+  });
+}
+function updateStealthBtn(on){
+  stealthOn=on;
+  var b=document.getElementById("stealthBtn");
+  if(on){
+    b.textContent="\u2705 \u4f2a\u88c5\u4e2d\u00b7\u70b9\u51fb\u6062\u590d";
+    b.className="stealth-btn on";
+  }else{
+    b.textContent="\ud83d\udda5 \u4f2a\u88c5\u6a21\u5f0f";
+    b.className="stealth-btn off";
+  }
+}
+fetch("/api/stealth?key="+window._pin).then(r=>r.json()).then(d=>{updateStealthBtn(d.stealth_mode);});
+</script>
+</body>
+</html>

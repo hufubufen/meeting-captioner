@@ -1,0 +1,39 @@
+# ============================================================================
+# 会议实时字幕与 AI 面试辅助工具 gitignore
+# ============================================================================
+
+# 敏感与个人配置文件 (禁止推送到 GitHub 仓库)
+config.json
+
+# 个人私密数据目录 (禁止推送到 GitHub 仓库)
+knowledge_base/*
+!knowledge_base/.gitkeep
+resume/*
+!resume/.gitkeep
+
+# 本地调试日志与导出的面试文本记录 (防止面试信息和密钥外泄)
+captioner_log.txt
+面试记录_*.txt
+*.log
+
+# Python 缓存、编译字节码与临时文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# 本地虚拟环境目录与包缓存
+.venv/
+venv/
+env/
+ENV/
+pyvenv.cfg
+.conda/
+.ipynb_checkpoints/
+
+# 操作系统临时垃圾文件
+.DS_Store
+Thumbs.db
+desktop.ini
