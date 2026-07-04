@@ -103,6 +103,16 @@ pip install -r requirements.txt
 * **简历**：请将您的个人 `.docx` 格式简历放入 `resume/` 文件夹下。
 * **知识库**：请将您准备的面试专项题库、大厂笔面试专项资料（支持 `.docx`, `.txt`, `.md`, `.pdf` 等格式）放入 `knowledge_base/` 文件夹下。
 
+##### 💡 知识库编写格式指南 (极重要)
+为使本地 RAG 检索模型能 100% 精确拆分与命中您的专属题库，建议您的知识库文档（.md / .txt / .docx）遵循以下 **Q&A 标准排版格式** 编写：
+```markdown
+## Q: 什么是硬链接和软链接？
+A: 硬链接指向同一个 Inode，删除源文件不影响硬链接；软链接保存路径，删除源文件后软链接失效。
+
+## 问题：什么是进程和线程的区别？
+答案：进程是资源分配的最小单位，线程是CPU调度的最小单位。一个进程可以包含多个线程，共享进程资源。
+```
+
 ---
 
 ### 💻 运行本程序
@@ -155,6 +165,15 @@ For physical anti-peeping safety, it features a local SSE server, allowing you t
    ```
 3. Rename `config.example.json` to `config.json` and insert your DashScope API-Key.
 4. Put your docx resumes into `resume/` and Q&A documents into `knowledge_base/`.
+   ##### 💡 Knowledge Base Formatting Guide (Crucial)
+   To allow the local RAG engine to parse and match your Q&A pairs correctly, organize your `.md`/`.txt`/`.docx` files in the following **standard format**:
+   ```markdown
+   ## Q: What is the difference between a Process and a Thread?
+   A: A process is the minimum unit of resource allocation, while a thread is the minimum unit of CPU scheduling.
+
+   ## 问题: 什么是软链接？
+   答案: 软链接保存的是源文件的路径，类似于Windows下的快捷方式。
+   ```
 5. Run the application:
    * **Console mode (interactive logs)**:
      `python meeting_captioner.py`
