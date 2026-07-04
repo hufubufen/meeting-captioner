@@ -83,6 +83,7 @@ class CaptionerUI:
 
         # 队列
         self.audio_queue = queue.Queue(maxsize=1000)
+        self.audio_queue_mic = queue.Queue(maxsize=1000)
         self.text_queue = queue.Queue(maxsize=100)
         self.ai_queue = queue.Queue(maxsize=50)
         self.ai_response_queue = queue.Queue(maxsize=50)
@@ -640,7 +641,7 @@ class CaptionerUI:
                 self.audio_thread.start()
                 # 错峰启动防御：强行延迟 400 毫秒再拉起麦克风采集。这能彻底避开 Windows CoreAudio (WASAPI) 并发枚举与 COM 重入时的底层硬件死锁。
                 time.sleep(0.4)
-                self.audio_thread_mic = AudioCaptureThread(self.audio_queue, capture_mode="mic")
+                self.audio_thread_mic = AudioCaptureThread(self.audio_queue_mic, capture_mode="mic")
                 self.audio_thread_mic.start()
             else:
                 self.audio_thread = AudioCaptureThread(self.audio_queue, capture_mode=source_mode)
@@ -648,7 +649,8 @@ class CaptionerUI:
             
             # 启动转录线程
             self.transcription_thread = TranscriptionThread(
-                self.audio_queue, self.text_queue, self.ai_queue, use_gpu=True
+                self.audio_queue, self.text_queue, self.ai_queue, use_gpu=True,
+                audio_queue_mic=self.audio_queue_mic if source_mode == "dual" else None
             )
             self.transcription_thread.start()
 

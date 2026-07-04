@@ -25,9 +25,10 @@ class TranscriptionThread(threading.Thread):
     _shared_postprocess = None
     _model_lock = threading.Lock()
 
-    def __init__(self, audio_queue, text_queue, ai_queue, use_gpu=True):
+    def __init__(self, audio_queue, text_queue, ai_queue, use_gpu=True, audio_queue_mic=None):
         super().__init__(daemon=True)
         self.audio_queue = audio_queue
+        self.audio_queue_mic = audio_queue_mic
         self.text_queue = text_queue
         self.ai_queue = ai_queue
         self.use_gpu = use_gpu
@@ -90,10 +91,34 @@ class TranscriptionThread(threading.Thread):
         frame_count = 0
 
         while not self._stop_event.is_set():
+            audio_chunk = None
+            audio_chunk_mic = None
+
+            # 1. 尝试非阻塞获取扬声器(系统音频)通道数据
             try:
-                audio_chunk = self.audio_queue.get(timeout=0.1)
+                audio_chunk = self.audio_queue.get_nowait()
             except Exception:
+                pass
+
+            # 2. 尝试非阻塞获取麦克风通道数据
+            if self.audio_queue_mic is not None:
+                try:
+                    audio_chunk_mic = self.audio_queue_mic.get_nowait()
+                except Exception:
+                    pass
+
+            # 3. 如果都无声音帧，短暂休眠释放 CPU 避空轮询
+            if audio_chunk is None and audio_chunk_mic is None:
+                time.sleep(0.01)
                 continue
+
+            # 4. 执行时域物理矢量混音合流，保持音频波形时序上的绝对连续性
+            if audio_chunk is not None and audio_chunk_mic is not None:
+                min_len = min(len(audio_chunk), len(audio_chunk_mic))
+                audio_chunk = audio_chunk[:min_len] + audio_chunk_mic[:min_len]
+            elif audio_chunk is None:
+                # 仅有麦克风有输入，使用麦克风帧
+                audio_chunk = audio_chunk_mic
 
             rms = np.sqrt(np.mean(audio_chunk ** 2))
             if np.isnan(rms) or np.isinf(rms):
