@@ -17,20 +17,21 @@ import queue
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-# 添加工具目录到路径
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, TOOL_DIR)
+# 添加项目根目录到路径
+TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(TEST_DIR)
+sys.path.insert(0, PROJECT_ROOT)
 
 # 读取 KB 目录（重构适配版）
-from kb import KnowledgeBase
+from knowledge_base import KnowledgeBase
 kb = KnowledgeBase("knowledge_base")
 kb_text = kb.load()
 print(f"KB loaded: {len(kb_text)} chars")
 
-# 创建 QwenAnalysisThread 实例（不启动线程）
-from analysis import QwenAnalysisThread
+# 创建 AIAnalysisThread 实例（不启动线程）
+from analysis import AIAnalysisThread
 
-ai_thread = QwenAnalysisThread.__new__(QwenAnalysisThread)
+ai_thread = AIAnalysisThread.__new__(AIAnalysisThread)
 ai_thread.ai_queue = queue.Queue()
 ai_thread.ai_response_queue = queue.Queue()
 ai_thread.api_key = "dummy"
@@ -95,7 +96,7 @@ total_vector_time = 0.0
 
 for question, expected_keyword, should_hit in test_cases:
     # 跳过自我介绍
-    if QwenAnalysisThread._is_self_intro_question(question):
+    if AIAnalysisThread._is_self_intro_question(question):
         print(f"[SKIP] self-intro: {question}")
         continue
 

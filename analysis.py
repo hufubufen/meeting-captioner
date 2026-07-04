@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger("captioner")
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
-class QwenAnalysisThread(threading.Thread):
+class AIAnalysisThread(threading.Thread):
     """从队列获取转录文字，调用通义千问 API 生成建议回答"""
 
     # 全局模型与 Tokenizer 缓存类变量，避免多次启停导致重复加载
@@ -700,27 +700,27 @@ class QwenAnalysisThread(threading.Thread):
 
         # 3. 加载 embedding 模型
         import torch
-        with QwenAnalysisThread._model_lock:
-            if QwenAnalysisThread._shared_embed_model is None:
+        with AIAnalysisThread._model_lock:
+            if AIAnalysisThread._shared_embed_model is None:
                 from transformers import AutoModel, AutoTokenizer
 
                 model_path = os.path.join(os.path.expanduser('~'), '.cache', 'models', 'text2vec-base-chinese')
                 logger.info(f"[RAG] 正在首次加载嵌入模型: {model_path}")
-                QwenAnalysisThread._shared_embed_tokenizer = AutoTokenizer.from_pretrained(model_path)
-                QwenAnalysisThread._shared_embed_model = AutoModel.from_pretrained(
+                AIAnalysisThread._shared_embed_tokenizer = AutoTokenizer.from_pretrained(model_path)
+                AIAnalysisThread._shared_embed_model = AutoModel.from_pretrained(
                     model_path, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
                 )
-                QwenAnalysisThread._shared_embed_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                QwenAnalysisThread._shared_embed_model.to(QwenAnalysisThread._shared_embed_device)
-                QwenAnalysisThread._shared_embed_model.eval()
+                AIAnalysisThread._shared_embed_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                AIAnalysisThread._shared_embed_model.to(AIAnalysisThread._shared_embed_device)
+                AIAnalysisThread._shared_embed_model.eval()
                 dtype = "FP16" if torch.cuda.is_available() else "FP32"
-                logger.info(f"[RAG] 嵌入模型首次加载完成并已常驻内存！ (device={QwenAnalysisThread._shared_embed_device}, {dtype})")
+                logger.info(f"[RAG] 嵌入模型首次加载完成并已常驻内存！ (device={AIAnalysisThread._shared_embed_device}, {dtype})")
             else:
                 logger.info("[RAG] 嵌入模型已就绪，复用缓存对象。")
                 
-            self._embed_tokenizer = QwenAnalysisThread._shared_embed_tokenizer
-            self._embed_model = QwenAnalysisThread._shared_embed_model
-            self._embed_device = QwenAnalysisThread._shared_embed_device
+            self._embed_tokenizer = AIAnalysisThread._shared_embed_tokenizer
+            self._embed_model = AIAnalysisThread._shared_embed_model
+            self._embed_device = AIAnalysisThread._shared_embed_device
 
         # 4. 批量编码
         questions = [q for q, _ in self._qa_pairs]
@@ -770,8 +770,8 @@ class QwenAnalysisThread(threading.Thread):
 
     def _load_bge_reranker(self):
         try:
-            with QwenAnalysisThread._model_lock:
-                if QwenAnalysisThread._shared_reranker_model is None:
+            with AIAnalysisThread._model_lock:
+                if AIAnalysisThread._shared_reranker_model is None:
                     from transformers import AutoModelForSequenceClassification, AutoTokenizer
                     import torch
                     import os
@@ -796,21 +796,21 @@ class QwenAnalysisThread(threading.Thread):
                         return
 
                     logger.info(f"[RAG] 正在首次加载 BGE-Reranker: {model_path}")
-                    QwenAnalysisThread._shared_reranker_tokenizer = AutoTokenizer.from_pretrained(model_path)
-                    QwenAnalysisThread._shared_reranker_model = AutoModelForSequenceClassification.from_pretrained(
+                    AIAnalysisThread._shared_reranker_tokenizer = AutoTokenizer.from_pretrained(model_path)
+                    AIAnalysisThread._shared_reranker_model = AutoModelForSequenceClassification.from_pretrained(
                         model_path, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
                     )
-                    QwenAnalysisThread._shared_reranker_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                    QwenAnalysisThread._shared_reranker_model.to(QwenAnalysisThread._shared_reranker_device)
-                    QwenAnalysisThread._shared_reranker_model.eval()
+                    AIAnalysisThread._shared_reranker_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                    AIAnalysisThread._shared_reranker_model.to(AIAnalysisThread._shared_reranker_device)
+                    AIAnalysisThread._shared_reranker_model.eval()
                     dtype = "FP16" if torch.cuda.is_available() else "FP32"
-                    logger.info(f"[RAG] BGE-Reranker 首次加载完成并已常驻内存！ (device={QwenAnalysisThread._shared_reranker_device}, {dtype})")
+                    logger.info(f"[RAG] BGE-Reranker 首次加载完成并已常驻内存！ (device={AIAnalysisThread._shared_reranker_device}, {dtype})")
                 else:
                     logger.info("[RAG] BGE-Reranker 已就绪，复用缓存对象。")
 
-                self._reranker_tokenizer = QwenAnalysisThread._shared_reranker_tokenizer
-                self._reranker_model = QwenAnalysisThread._shared_reranker_model
-                self._reranker_device = QwenAnalysisThread._shared_reranker_device
+                self._reranker_tokenizer = AIAnalysisThread._shared_reranker_tokenizer
+                self._reranker_model = AIAnalysisThread._shared_reranker_model
+                self._reranker_device = AIAnalysisThread._shared_reranker_device
         except Exception as e:
             logger.error(f"[RAG] BGE-Reranker 加载失败，退至余弦阈值直接判定: {e}")
             self._reranker_model = None

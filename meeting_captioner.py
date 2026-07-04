@@ -15,12 +15,12 @@ from datetime import datetime
 import logging
 
 # 导入重构后的子模块
-from kb import KnowledgeBase
+from knowledge_base import KnowledgeBase
 from audio_capture import AudioCaptureThread
 from transcription import TranscriptionThread
 from web_server import SuggestionWebServer
 from settings_dialog import SettingsDialog
-from analysis import QwenAnalysisThread
+from analysis import AIAnalysisThread
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger("captioner")
@@ -591,7 +591,7 @@ class CaptionerUI:
             self.status_label.config(text="● 文本测试中...", fg="#38bdf8")
             self.ai_status_label.config(text="AI: 运行中", fg="#34d399")
 
-            self.ai_thread = QwenAnalysisThread(
+            self.ai_thread = AIAnalysisThread(
                 self.ai_queue, self.ai_response_queue,
                 api_key=api_key,
                 model=self.selected_model.get(),
@@ -624,7 +624,7 @@ class CaptionerUI:
             self.transcription_thread.start()
 
             # 启动 AI 分析线程
-            self.ai_thread = QwenAnalysisThread(
+            self.ai_thread = AIAnalysisThread(
                 self.ai_queue, self.ai_response_queue,
                 api_key=api_key,
                 model=self.selected_model.get(),

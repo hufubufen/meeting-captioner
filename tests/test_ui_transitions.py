@@ -7,9 +7,10 @@ from unittest.mock import MagicMock, patch
 import tkinter as tk
 from tkinter import messagebox
 
-# 添加项目目录到路径
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, TOOL_DIR)
+# 添加项目根目录到路径
+TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(TEST_DIR)
+sys.path.insert(0, PROJECT_ROOT)
 
 # 导入 UI 模块及配色常数
 import meeting_captioner
@@ -27,7 +28,7 @@ class TestUITransitions(unittest.TestCase):
         self.patcher_kb = patch('meeting_captioner.KnowledgeBase')
         self.patcher_audio = patch('meeting_captioner.AudioCaptureThread')
         self.patcher_trans = patch('meeting_captioner.TranscriptionThread')
-        self.patcher_ai = patch('meeting_captioner.QwenAnalysisThread')
+        self.patcher_ai = patch('meeting_captioner.AIAnalysisThread')
         self.patcher_web = patch('meeting_captioner.SuggestionWebServer')
         
         self.patcher_showwarning = patch('tkinter.messagebox.showwarning')

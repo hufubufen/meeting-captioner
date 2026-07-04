@@ -37,7 +37,7 @@ graph TD
     end
 
     subgraph 本地静态资源
-        KB[kb.py / 知识库加载器]
+        KB[knowledge_base.py / 知识库加载器]
         IH[index.html / 手机防窥静态模版]
     end
 
@@ -110,7 +110,7 @@ D:\anaconda3\envs\dmh_env\python.exe meeting_captioner.py
 这会在前台执行，并在您的终端窗口中实时输出所有的 ASR 转写进程、RAG 检索得分和 API 调用追踪日志。
 
 #### 方式二：双击后台启动（无控制台窗口静默运行）
-直接双击运行项目根目录下的 [启动.bat](file:///C:/Users/15896/Desktop/oled/test/启动.bat) 即可。挂件会以无终端窗口的纯记事本外观形态在后台拉起，避免桌面上有黑色的 CMD 窗口漏屏。
+直接双击运行项目根目录下的 [start.bat](file:///C:/Users/15896/Desktop/oled/test/start.bat) 即可。挂件会以无终端窗口的纯记事本外观形态在后台拉起，避免桌面上有黑色的 CMD 窗口漏屏。
 
 ---
 
@@ -143,4 +143,4 @@ For physical anti-peeping safety, it features a local SSE server, allowing you t
    * **Console mode (interactive logs)**:
      `python meeting_captioner.py`
    * **Silent mode (no console)**:
-     Double-click `启动.bat`.
+     Double-click `start.bat`.

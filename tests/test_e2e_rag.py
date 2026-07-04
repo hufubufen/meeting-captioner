@@ -16,25 +16,26 @@ import queue
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, TOOL_DIR)
+TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(TEST_DIR)
+sys.path.insert(0, PROJECT_ROOT)
 
 # 读取 KB 目录（重构适配版）
-from kb import KnowledgeBase
+from knowledge_base import KnowledgeBase
 kb = KnowledgeBase("knowledge_base")
 kb_text = kb.load()
 print(f"KB loaded: {len(kb_text)} chars")
 
 # 读取 config
-config_path = os.path.join(TOOL_DIR, "config.json")
+config_path = os.path.join(PROJECT_ROOT, "config.json")
 with open(config_path, 'r', encoding='utf-8') as f:
     config = json.load(f)
 print(f"Config loaded: model={config['model']}")
 
-# 创建 QwenAnalysisThread 实例
-from analysis import QwenAnalysisThread
+# 创建 AIAnalysisThread 实例
+from analysis import AIAnalysisThread
 
-ai_thread = QwenAnalysisThread.__new__(QwenAnalysisThread)
+ai_thread = AIAnalysisThread.__new__(AIAnalysisThread)
 ai_thread.ai_queue = queue.Queue()
 ai_thread.ai_response_queue = queue.Queue()
 ai_thread.api_key = config["api_key"]
@@ -103,7 +104,7 @@ llm_calls = 0
 high_conf_skipped = 0
 
 for question, expected_keyword, should_hit in test_cases:
-    if QwenAnalysisThread._is_self_intro_question(question):
+    if AIAnalysisThread._is_self_intro_question(question):
         print(f"[SKIP] self-intro: {question}")
         continue
 
