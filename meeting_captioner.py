@@ -1062,6 +1062,30 @@ def main():
         ]
     )
 
+    # 互锁保护：自愈式单例检测与隐藏实例唤醒召回
+    import socket
+    import urllib.request
+    import sys
+    try:
+        # 尝试短暂建立连接探测 8765 端口
+        probe_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe_sock.settimeout(0.2)
+        probe_sock.connect(("127.0.0.1", 8765))
+        probe_sock.close()
+        logger.info("[单例检测] 侦测到已有程序实例在后台运行。")
+        # 8765已被绑定，说明旧实例隐藏在后台，向其发送退出伪装指令使其在桌面重新显现
+        try:
+            urllib.request.urlopen("http://127.0.0.1:8765/api/stealth?mode=off", timeout=0.5)
+            logger.info("[单例检测] 已向后台隐藏中的老实例发送显现召回指令，新启动实例默默退出。")
+        except Exception:
+            pass
+        sys.exit(0)
+    except sys.exit:  # 捕获 sys.exit 异常以允许正常退出而不会回退到捕获 Exception
+        raise
+    except Exception:
+        # 端口未被占用，说明没有前置实例在运行，正常启动
+        pass
+
     logger.info("=" * 50)
     logger.info("会议字幕 + AI 面试辅助工具 (重构模块化 & 规范日志版)")
     logger.info("=" * 50)

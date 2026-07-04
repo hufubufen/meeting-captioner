@@ -47,6 +47,7 @@ class SuggestionWebServer(threading.Thread):
         # SSE 多并发连接数防护限制
         self._active_connections = 0
         self._conn_lock = threading.Lock()
+        self._current_session_id = 0.0
 
     def update(self, question, answer, timestamp):
         """AI 线程回调：更新最新建议"""
@@ -198,17 +199,10 @@ class SuggestionWebServer(threading.Thread):
 
                 # 4. 路由逻辑
                 if path == "/api/stream":
-                    # 并发连接数限制守护
-                    with server._conn_lock:
-                        if server._active_connections >= 2:
-                            self.send_response(429)
-                            self.send_header("Content-Type", "application/json; charset=utf-8")
-                            self.send_header("Access-Control-Allow-Origin", "*")
-                            self.end_headers()
-                            self.wfile.write(json.dumps({"error": "Too many active stream connections. Refused."}, ensure_ascii=False).encode('utf-8'))
-                            return
-                        else:
-                            server._active_connections += 1
+                    # 抢占式单活跃连接 Session 顶号机制：一旦有新连接建立，分配最新的 session_id 并写入全局，使旧连接自动安全退出自毁
+                    session_id = time.time()
+                    with server._lock:
+                        server._current_session_id = session_id
 
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
@@ -217,7 +211,8 @@ class SuggestionWebServer(threading.Thread):
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     try:
-                        while not server._stop_event.is_set():
+                        # 当服务没有被停止，且当前会话没有被新的连接顶替时，持续发送
+                        while not server._stop_event.is_set() and server._current_session_id == session_id:
                             with server._lock:
                                 data = json.dumps(server._latest, ensure_ascii=False)
                             self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
@@ -225,9 +220,6 @@ class SuggestionWebServer(threading.Thread):
                             time.sleep(0.3)
                     except Exception:
                         pass
-                    finally:
-                        with server._conn_lock:
-                            server._active_connections = max(0, server._active_connections - 1)
                 elif path == "/api/latest":
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
