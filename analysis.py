@@ -1085,6 +1085,9 @@ class AIAnalysisThread(threading.Thread):
             self._qa_intents = {}
 
         # === 1. 语义直连分流拦截机制（向量/BGE 相似度匹配） ===
+        intent_tag = None
+        best_score = 0.0
+        
         if self._index_ready:
             candidates = self._embedding_scores(question, top_n=3)
             if candidates:
@@ -1092,25 +1095,31 @@ class AIAnalysisThread(threading.Thread):
                 matched_q = self._qa_pairs[best_idx][0]
                 intent_tag = self._qa_intents.get(matched_q)
                 
-                if intent_tag and best_score >= 0.50:
+                # 只有固定背诵的内容（如自我介绍 self_intro）才允许不经大模型直接快速输出本地原文
+                if intent_tag == "self_intro" and best_score >= 0.50:
                     extracted = self._execute_intent_handler(intent_tag, question)
                     if extracted:
-                        logger.info(f"[意图分流] 语义命中直连类别 '{intent_tag}' (score={best_score:.4f}) -> 瞬间输出本地原文")
+                        logger.info(f"[意图分流] 语义命中自我介绍直连 (score={best_score:.4f}) -> 直接输出本地原文")
                         with self._history_lock:
                             self.conversation_history.append({"role": "user", "content": f"面试官说：{question}"})
                             self.conversation_history.append({"role": "assistant", "content": extracted})
                         return extracted
+                
+                # 防御安全锁：如果是反问面试官意图，必须在问题中检测到邀请反问的强置信度关键词，否则拦截降级回退
+                if intent_tag == "ask_interviewer":
+                    import re
+                    if not re.search(r'想问|要问|问题|反问|任何疑问|补充|想要了解', question):
+                        intent_tag = None  # 剥夺直连标签，迫使其退回到普通的大模型自适应推理
 
         # === 2. 正常 RAG 通用知识库检索匹配 ===
+        direct_kb_context = ""
         if self._index_ready:
             rag_result = self._find_best_qa_match(question)
             if isinstance(rag_result, tuple) and rag_result[0] is not None:
                 (kb_q, kb_a), score = rag_result
-                logger.info(f"[RAG] 命中知识库，直接输出答案 (score={score:.4f})")
-                with self._history_lock:
-                    self.conversation_history.append({"role": "user", "content": f"面试官说：{question}"})
-                    self.conversation_history.append({"role": "assistant", "content": kb_a})
-                return kb_a
+                # 强力防御：不再直接返回本地硬编码原文（防止死板答非所问），而是作为高优先级背景注入大模型进行自适应融合生成
+                logger.info(f"[RAG] 命中相关知识库问题 (score={score:.4f}) -> 转化为高优先级上下文注入大模型自适应融合生成")
+                direct_kb_context = f"【精选直接相关知识参考】\n提问: {kb_q}\n官方答案原文: {kb_a}\n\n"
 
         # === 3. 大模型基于局部知识库及简历的通用答复生成 ===
         if hasattr(self, '_last_candidates') and self._last_candidates:
@@ -1123,9 +1132,26 @@ class AIAnalysisThread(threading.Thread):
         else:
             kb_text = "（知识库为空）"
             
+        # 融合直接命中的高优先级 Q&A 文本
+        if direct_kb_context:
+            kb_text = direct_kb_context + "【其他相关候选参考知识】\n" + kb_text
+
         resume_text = self.resume_text if self.resume_text else "（简历为空）"
         system_content = self.system_prompt.replace("{knowledge_base}", kb_text)
         system_content = system_content.replace("{resume}", resume_text)
+        
+        # 强力注入高情商面试黄金准则（强洗脑），防范大模型在任何非预期状态下误吐出反问句，或者在追问中机械堆砌简历
+        high_eq_rules = (
+            "=== 核心黄金面试准则（优先级最高，你必须无条件严格执行！） ===\n"
+            "1. 严格区分【做了什么（技术细节）】与【学到了什么（收获/成长/方法论）】！\n"
+            "   - 如果面试官询问你在这个项目中“学到了什么”（或者“有什么收获”、“获得了什么成长”等），你必须归纳提炼出你获得的工程实战经验、踩坑后的方法论提升等（如：对实际工业现场噪声的敬畏、解决多线程同步时差的感悟等）。\n"
+            "   - 绝对禁止在这种问题下干巴巴、原封不动地平铺直叙去念你的简历项目！\n"
+            "2. 针对面试官的追问/否定/纠正（例如：'我是说让你说学到了什么，不是你做了什么'、'回答得不对'等），你必须在回答的第一句话礼貌致歉并立刻根据他的最新指正进行精准作答。千万不能在这个时候反问面试官任何问题！\n"
+            "3. 严格禁止在面试中途【主动反问面试官】！\n"
+            "   - 绝对不允许在面试官提问、追问技术或项目时，去主动反问面试官（例如：'老师，我想了解一下...'这类问题绝对不允许在非反问阶段生成！）。\n"
+            "   - 只有当面试官明确邀请你提问时（例如：'你有什么想问我的吗'、'你有什么问题要问我'），你才能给出反问问题清单。\n\n"
+        )
+        system_content = high_eq_rules + system_content
 
         if self.detail_override:
             detail_level = self.detail_override
