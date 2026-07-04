@@ -75,8 +75,8 @@ graph TD
 推荐使用 Python 3.10 环境运行本工具：
 ```bash
 # 创建并激活环境
-conda create -n dmh_env python=3.10
-conda activate dmh_env
+conda create -n captioner_env python=3.10
+conda activate captioner_env
 
 # 安装项目所需的全部依赖库
 pip install -r requirements.txt
@@ -105,7 +105,7 @@ pip install -r requirements.txt
 #### 方式一：控制台前台运行（可实时观察完整日志）
 在您的终端（cmd / powershell）下切换到项目根目录，然后执行以下命令启动：
 ```bash
-D:\anaconda3\envs\dmh_env\python.exe meeting_captioner.py
+python meeting_captioner.py
 ```
 这会在前台执行，并在您的终端窗口中实时输出所有的 ASR 转写进程、RAG 检索得分和 API 调用追踪日志。
 
@@ -133,8 +133,8 @@ For physical anti-peeping safety, it features a local SSE server, allowing you t
 1. Clone this repository.
 2. Setup environment:
    ```bash
-   conda create -n dmh_env python=3.10
-   conda activate dmh_env
+   conda create -n captioner_env python=3.10
+   conda activate captioner_env
    pip install -r requirements.txt
    ```
 3. Rename `config.example.json` to `config.json` and insert your DashScope API-Key.
