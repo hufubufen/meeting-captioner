@@ -746,13 +746,38 @@ class CaptionerUI:
                 0, lambda: self._toggle_stealth_mode(mode)
             )
             self.web_server.start()
-            self.web_url_label.config(text="📱 正在获取地址...")
+            self.web_url_label.config(text="📱 正在获取地址...", fg="#38bdf8", cursor="hand2")
 
             def _fetch_ip():
                 time.sleep(0.5)
                 ip = SuggestionWebServer._get_local_ip()
-                url = f"http://{ip}:{SuggestionWebServer.PORT}"
+                pin = self.web_server._pin if self.web_server else ""
+                url = f"http://{ip}:{SuggestionWebServer.PORT}/?key={pin}"
+                
+                # 点击复制到系统剪贴板
+                def _copy_url(event=None):
+                    try:
+                        self.root.clipboard_clear()
+                        self.root.clipboard_append(url)
+                        self.web_url_label.config(text="✓ 链接已复制！", fg="#34d399")
+                        # 1.2 秒后复原显示
+                        self.root.after(1200, lambda: self.web_url_label.config(text=f"📱 {url}", fg="#38bdf8"))
+                    except Exception as err:
+                        logger.error(f"复制链接失败: {err}")
+                
+                # 悬停超链接亮起反馈
+                def _on_hover(event=None):
+                    self.web_url_label.config(fg="#60a5fa")
+                    
+                def _on_leave(event=None):
+                    current_txt = self.web_url_label.cget("text")
+                    if "已复制" not in current_txt:
+                        self.web_url_label.config(fg="#38bdf8")
+
                 self.root.after(0, lambda: self.web_url_label.config(text=f"📱 {url}"))
+                self.web_url_label.bind("<Button-1>", _copy_url)
+                self.web_url_label.bind("<Enter>", _on_hover)
+                self.web_url_label.bind("<Leave>", _on_leave)
 
             threading.Thread(target=_fetch_ip, daemon=True).start()
         except Exception as e:
