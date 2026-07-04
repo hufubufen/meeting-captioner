@@ -26,13 +26,17 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 .stealth-btn.off{background:#238636;color:#fff;border-color:#238636}
 </style>
 </head>
-<body>
+<body ondblclick="toggleAutoScroll()">
 <div class="header">
   <h1>AI 面试辅助</h1>
   <div class="timestamp"><span class="status-dot"></span><span id="ts">等待面试官提问...</span></div>
 </div>
-<div class="stealth-bar">
-  <button class="stealth-btn off" id="stealthBtn" onclick="toggleStealth()">🖥 伪装模式</button>
+<div class="stealth-bar" style="display:flex;border-bottom:1px solid #30363d;">
+  <button class="stealth-btn off" id="stealthBtn" onclick="toggleStealth()" style="flex:1;border-radius:0;border:none;border-right:1px solid #30363d;">🖥 伪装模式</button>
+  <button class="stealth-btn" id="scrollBtn" onclick="toggleAutoScroll()" style="flex:1;border-radius:0;border:none;background:#21262d;color:#8b949e;">开启自动慢滚</button>
+</div>
+<div class="scroll-status" id="scrollIndicator" style="background:#161b22;padding:6px 16px;border-bottom:1px solid #30363d;font-size:11px;color:#8b949e;text-align:center;">
+  💡 提示：双击手机屏幕可直接开关“慢速滚屏提词器”
 </div>
 <div class="content" id="content">
   <div class="empty">
@@ -49,6 +53,41 @@ if(!window._pin){
   window._pin=window.location.hash.replace("#","")||"";
 }
 var lastTs="";
+
+// 平滑触底滚动逻辑
+function autoScrollToBottom(){
+  if(window.scrollInterval) return; // 慢滚开启时交由慢滚处理
+  window.scrollTo({
+    top: document.body.scrollHeight,
+    behavior: 'smooth'
+  });
+}
+
+// 慢滚提词器开关
+window.scrollInterval = null;
+function toggleAutoScroll() {
+  var indicator = document.getElementById("scrollIndicator");
+  var btn = document.getElementById("scrollBtn");
+  if (window.scrollInterval) {
+    clearInterval(window.scrollInterval);
+    window.scrollInterval = null;
+    indicator.textContent = "💡 提示：双击手机屏幕可直接开关“慢速滚屏提词器”";
+    indicator.style.color = "#8b949e";
+    btn.textContent = "开启自动慢滚";
+    btn.style.background = "#21262d";
+    btn.style.color = "#8b949e";
+  } else {
+    indicator.textContent = "▶ 提词器慢速滚动中 (双击屏幕可暂停)";
+    indicator.style.color = "#58a6ff";
+    btn.textContent = "⏸ 暂停慢滚";
+    btn.style.background = "#0e4429";
+    btn.style.color = "#39d353";
+    window.scrollInterval = setInterval(() => {
+      window.scrollBy(0, 1);
+    }, 45); // 每秒滚动约22像素，极其柔和
+  }
+}
+
 function poll(){
   fetch("/api/latest?key="+window._pin).then(r=>{if(!r.ok){throw "auth";}}).then(r=>r.json()).then(d=>{
     if(!d.question) return;
@@ -57,6 +96,7 @@ function poll(){
     if(d.question){h+='<div class="card"><div class="card-label">\u{1f3cb} \u{9762}\u{8bd5}\u{5b98}\u{95ee}\u{9898}</div><div class="question">'+esc(d.question)+'</div></div>';}
     if(d.answer){h+='<div class="card"><div class="card-label">\u{1f4a1} AI \u{5efa}\u{8bae}</div><div class="answer">'+esc(d.answer)+'</div></div>';}
     document.getElementById("content").innerHTML=h||'<div class="empty"><div class="icon">\u{1f3a4}</div><div>\u{7b49}\u{5f85}\u{9762}\u{8bd5}\u{5b98}\u{63d0}\u{95ee}...</div></div>';
+    autoScrollToBottom();
   }).catch(()=>{});
 }
 function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML;}
@@ -71,6 +111,7 @@ function startSSE(){
     if(d.question){h+='<div class="card"><div class="card-label">\u{1f3cb} \u{9762}\u{8bd5}\u{5b98}\u{95ee}\u{9898}</div><div class="question">'+esc(d.question)+'</div></div>';}
     if(d.answer){h+='<div class="card"><div class="card-label">\u{1f4a1} AI \u{5efa}\u{8bae}</div><div class="answer">'+esc(d.answer)+'</div></div>';}
     document.getElementById("content").innerHTML=h||'<div class="empty"><div class="icon">\u{1f3a4}</div><div>\u{7b49}\u{5f85}\u{9762}\u{8bd5}\u{5b98}\u{63d0}\u{95ee}...</div></div>';
+    autoScrollToBottom();
   };
   evtSource.onerror=function(){evtSource.close();setTimeout(startPoll,1000);};
 }
