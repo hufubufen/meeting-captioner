@@ -1080,8 +1080,6 @@ def main():
         except Exception:
             pass
         sys.exit(0)
-    except sys.exit:  # 捕获 sys.exit 异常以允许正常退出而不会回退到捕获 Exception
-        raise
     except Exception:
         # 端口未被占用，说明没有前置实例在运行，正常启动
         pass
