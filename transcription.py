@@ -94,31 +94,40 @@ class TranscriptionThread(threading.Thread):
             audio_chunk = None
             audio_chunk_mic = None
 
-            # 1. 尝试非阻塞获取扬声器(系统音频)通道数据
-            try:
-                audio_chunk = self.audio_queue.get_nowait()
-            except Exception:
-                pass
-
-            # 2. 尝试非阻塞获取麦克风通道数据
-            if self.audio_queue_mic is not None:
+            if self.audio_queue_mic is None:
+                # 1. 单通道模式：直接阻塞获取主队列，闲置时 CPU 占用率为 0%
                 try:
-                    audio_chunk_mic = self.audio_queue_mic.get_nowait()
+                    audio_chunk = self.audio_queue.get(timeout=0.1)
+                except Exception:
+                    continue
+            else:
+                # 2. 双通道合流模式：自适应两路防抖对齐，避免空轮询吃满 CPU
+                try:
+                    # 先以极短超时探测主队列（Speaker）
+                    audio_chunk = self.audio_queue.get(timeout=0.02)
                 except Exception:
                     pass
 
-            # 3. 如果都无声音帧，短暂休眠释放 CPU 避空轮询
-            if audio_chunk is None and audio_chunk_mic is None:
-                time.sleep(0.01)
-                continue
+                try:
+                    if audio_chunk is not None:
+                        # 主队列拿到了，麦克风队列执行非阻塞快速获取
+                        audio_chunk_mic = self.audio_queue_mic.get_nowait()
+                    else:
+                        # 主队列空，麦克风队列执行带超时的客观阻塞获取，维持线程挂起休眠
+                        audio_chunk_mic = self.audio_queue_mic.get(timeout=0.02)
+                except Exception:
+                    pass
 
-            # 4. 执行时域物理矢量混音合流，保持音频波形时序上的绝对连续性
-            if audio_chunk is not None and audio_chunk_mic is not None:
-                min_len = min(len(audio_chunk), len(audio_chunk_mic))
-                audio_chunk = audio_chunk[:min_len] + audio_chunk_mic[:min_len]
-            elif audio_chunk is None:
-                # 仅有麦克风有输入，使用麦克风帧
-                audio_chunk = audio_chunk_mic
+                # 若两路均无数据，说明当前没有任何声音帧，继续等待
+                if audio_chunk is None and audio_chunk_mic is None:
+                    continue
+
+                # 3. 执行时域物理矢量混音合流，保持音频波形时序上的绝对连续性
+                if audio_chunk is not None and audio_chunk_mic is not None:
+                    min_len = min(len(audio_chunk), len(audio_chunk_mic))
+                    audio_chunk = audio_chunk[:min_len] + audio_chunk_mic[:min_len]
+                elif audio_chunk is None:
+                    audio_chunk = audio_chunk_mic
 
             rms = np.sqrt(np.mean(audio_chunk ** 2))
             if np.isnan(rms) or np.isinf(rms):
