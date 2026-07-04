@@ -683,10 +683,16 @@ class CaptionerUI:
 
         if self.audio_thread:
             self.audio_thread.stop()
+            self.audio_thread.join(timeout=1.0)
+            self.audio_thread = None
         if self.transcription_thread:
             self.transcription_thread.stop()
+            self.transcription_thread.join(timeout=1.0)
+            self.transcription_thread = None
         if self.ai_thread:
             self.ai_thread.stop()
+            self.ai_thread.join(timeout=1.0)
+            self.ai_thread = None
 
         self._stop_web_server()
 

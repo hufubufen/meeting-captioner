@@ -37,11 +37,22 @@ class AudioCaptureThread(threading.Thread):
         return self._pause_event.is_set()
 
     def run(self):
+        import ctypes
+        # 强制在子线程中初始化 COM 运行库，彻底杜绝 Windows Core Audio WASAPI 调用的 0x800401f0 (CO_E_NOTINITIALIZED) 错误
+        try:
+            ctypes.windll.ole32.CoInitialize(None)
+        except Exception as ce:
+            logger.error(f"[音频] COM 初始化失败: {ce}")
+
         try:
             import soundcard as sc
         except ImportError:
             self.error_msg = "未安装 soundcard 库，无法采集音频。请运行 pip install soundcard。"
             logger.error("错误：未安装 soundcard，无法采集音频。")
+            try:
+                ctypes.windll.ole32.CoUninitialize()
+            except Exception:
+                pass
             return
 
         self.running = True
@@ -113,6 +124,11 @@ class AudioCaptureThread(threading.Thread):
             logger.error(f"[音频] 捕获错误：{e}", exc_info=True)
         finally:
             self.running = False
+            # 必须反初始化 COM，保障 Windows 底层套接字资源彻底解绑
+            try:
+                ctypes.windll.ole32.CoUninitialize()
+            except Exception:
+                pass
             logger.info(f"音频捕获线程停止 (mode={self.capture_mode})")
 
     def stop(self):
