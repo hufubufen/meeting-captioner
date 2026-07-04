@@ -10,17 +10,24 @@
 
 为保障面试过程中的物理防窥性，系统额外搭载了本地局域网 SSE 推送服务，支持在手机、平板等副屏端扫码以秒级延迟查看 AI 提示。
 
-### 🌟 核心优化与亮点特性
+### 🌟 核心优化与亮点特性 (面试实战神器)
 
-1. **扁平化现代暗黑 UI**：重塑 Tkinter 原生陈旧界面，定义太空暗紫蓝配色方案，并为所有控制按钮注入鼠标悬停 Hover 亮化交互动效，提供极佳的扁平化科技视觉反馈。
-2. **极速零延迟双重分流 RAG**：
+1. **扁平化现代暗黑 UI**：重塑 Tkinter 原生陈旧界面，定义太空暗紫蓝配色方案，并为所有控制按钮注入鼠标悬停 Hover 变亮交互动效，提供极佳的扁平化科技视觉反馈。
+2. **免虚拟声卡极速双音合流 (Dual Capture & Mixing)**：
+   * 区别于市面上大多数需要繁琐安装 Virtual Audio Cable 或 BlackHole 虚拟声卡路由的开源项目，本项目在底层实现了 **WASAPI Loopback 扬声器回环与物理麦克风的并发对齐合流**！
+   * **100% 免配置虚拟声卡，双击即用**。无论面试官说话、还是您自己口头确认/复述，均能以 120ms 级极速识别转写，构成面试收音的“双保险”。
+3. **特工级自愈防窥假关闭 (Stealth Withdraw & Mutual Recall)**：
+   * **自适应假关闭**：在“伪装模式”（记事本大白板）且面试运行中，用户若点击右上角的 `✕` 按钮，主窗口将**瞬间在桌面上物理隐藏并从 Windows 任务栏彻底蒸发**，而后台收音、LLM 分析及手机端推送 100% 毫无影响地静默狂飙！
+   * **单例互锁召回**：电脑端支持重复双击 `start.bat` 一键自动向后台隐藏的实例发送局域网指令将其**在桌面重新唤醒召回显现 (Deiconify)**，新实例默默退出，彻底终结了后台多进程冲突。手机端亦支持一键退出伪装远程唤醒窗口。
+4. **自适应两路阻塞休眠极致低能耗 (Double-Queue Blocking Alignment)**：
+   * 采用创新的双队列阻塞挂起对齐机制，在没有任何声音输入（闲置静音）时，转录线程在系统底层自动挂起进入完全休眠，**成功将闲置 CPU 消耗降至近乎 0%**，解决了传统的空轮询持续消耗系统资源的顽疾。
+5. **抢占式单会话顶号重连 (SSE Preemptive Connection)**：
+   * 摒弃了导致连接数虚高而引发 429 拒绝的传统限流。建立 **Preemptive 抢占式机制**，手机端随时刷新或重新扫码，新连接瞬间被设为唯一会话，旧连接线程在 300 毫秒内自愈退出。彻底根治了手机重连面板锁死不刷新的顽疾。
+6. **极速零延迟双重分流 RAG**：
    * 搭载本地 `text2vec` 向量索引与 BGE 重排模型。
    * 设计 **高低阈值直接拦截机制**。对于高度匹配的知识库常规问题或特化意图，本地直接 100% 拦截并命中答案（零幻觉生成）；对于极低匹配的闲聊，直接本地拦截拒绝，极大地规避了不必要的网络 API 额外开销，使检索响应从 **1.2s 骤降至 120ms 以内**。
-3. **大模型单例常驻复用（0毫秒就绪）**：
-   * 将 ASR 语音模型与 Embedding/Rerank 等大模型对象单例化并长驻于类变量中。
-   * 彻底解决了传统“停止-开始”过程中频繁销毁与重载大模型导致的内存/显存泄露、CPU 卡顿以及中途切换模式后听不到声音的底层 bug，实现了二次启动 0 毫秒瞬间就绪。
-4. **自适应噪声 VAD 校准**：程序启动前 1 秒自动估计声卡及环境底噪的能量分布并动态拟合静音判定门槛，完美自适应任何不同底噪的麦克风与环境。
-5. **局域网物理防窥端安全升级**：Web 服务采用 **6位随机字母数字混合 PIN 码**，并对请求 IP 实行登录失败限流，**错误尝试超过 5 次自动对该 IP 封禁 10 分钟**，彻底防范局域网字典穷举爆破。
+7. **大模型单例常驻复用（0毫秒就绪）**：将 ASR 语音模型与 Embedding/Rerank 等大模型对象单例化并长驻于类变量中，彻底解决了中途启停导致的内存泄漏与显存泄露问题。
+8. **防窥提词器慢速滚屏 (Auto Prompter Mode)**：手机端防窥终端支持自动流式平滑触底，并支持双击任意屏幕位置进入“提词器慢滚模式”，以每 45ms 下滑 1 像素的极温和速度自动缓慢滚动，彻底解放候选人的双手。
 
 ---
 
@@ -122,11 +129,20 @@ For physical anti-peeping safety, it features a local SSE server, allowing you t
 
 ### 🌟 Key Features
 
-1. **Modern Dark UI**: Flat widgets design with dark blue themes, rounded cards, and smooth hover micro-animations on all controller buttons.
-2. **Double-Threshold RAG Router**: High/low thresholds prevent unnecessary web API overhead. Matching Q&As are resolved locally (0-illusion), reducing latency from **1.2s to under 120ms**.
-3. **Class-Variable Model Caching**: Models are loaded only once globally. Any start/stop or toggle actions are resolved in **0 ms**, preventing memory leaks.
-4. **Adaptive Noise VAD Calibration**: The program auto-estimates microphone RMS energy in the first second to set silent boundaries dynamically.
-5. **Anti-peeping Secondary Screen**: Generates random 6-character PIN codes and blocks IP addresses after 5 failed login attempts for 10 minutes.
+1. **Modern Dark UI**: Sleek flat purple-blue theme, rounded cards, and responsive hover micro-interactions on all interactive buttons.
+2. **Virtual-Soundcard-Free Dual Capture**:
+   * Unlike most tools requiring complex virtual soundcard routing (e.g., BlackHole/Voicemeeter), this project implements **direct WASAPI Loopback (speaker) & physical microphone alignment capture** in the backend.
+   * **Plug & Play (0-configuration)**. Captures both the interviewer's voice and your own voice with 120ms-level latency, establishing a dual-safe channel.
+3. **Agent-Grade Stealth Fake Close (Withdraw & Recall)**:
+   * **Stealth Fake Close**: Under stealth mode (notepad mock interface), clicking `✕` **instantly hides the window and vanishes it from the taskbar**, while backend capture and phone streaming remain 100% active.
+   * **Single-Instance Recall**: Double-clicking `start.bat` sends an API signal to the hidden instance to **Deiconify (reveal) it back onto the desktop**, avoiding process conflicts.
+4. **Staggered Double-Queue Blocking Alignment (0% Idle CPU)**:
+   * Features a blocking-based alignment reader. The thread suspends itself in the OS scheduler when no audio signals are active, **dropping idle CPU usage to nearly 0%**, preventing CPU hot spinning.
+5. **Preemptive Single-Session Channel (SSE Anti-Freeze)**:
+   * Replaces rigid connection limiters with a **preemptive session kicker**. Fresh scans or tab reloads instantly kick out zombie HTTP threads, avoiding 429 locks.
+6. **Ultra-Low Latency RAG Router**: Local `text2vec` & BGE-Reranker model. Local QA-pair resolution reduces end-to-end response time from **1.2s to under 120ms**.
+7. **Class-Variable Model Caching**: Models (ASR, Embedding) remain resident as singletons, ensuring 0-ms wakeups and preventing memory leaks.
+8. **Auto Prompter Mode**: The secondary web client scrolls smoothly at a mild speed (1px per 45ms) on double-tap, freeing your hands during interviews.
 
 ### 🚀 Quick Start
 
