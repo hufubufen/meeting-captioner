@@ -115,6 +115,7 @@ class CaptionerUI:
         self.selected_model = tk.StringVar(value=self.config.get("model", "qwen-plus"))
 
         # 加载配置和文档
+        self.stealth_mode = False
         self._load_config()
         self._load_documents()
 
@@ -728,12 +729,12 @@ class CaptionerUI:
 
     def _on_close_request(self):
         """当用户点击关闭窗口 (✕) 时触发"""
-        if hasattr(self, 'stealth_mode') and self.stealth_mode:
-            # 如果处于伪装模式下被要求关闭，则自动在物理桌面隐藏窗口（假关闭后台静默运行）
+        if self.stealth_mode and self.is_running:
+            # 只有在【伪装模式下】且【正在面试运行中】点击关闭，才执行隐藏（假关闭后台静默运行）
             self.root.withdraw()
             logger.info("[安全防窥] 触发假关闭防御：已将主窗口隐藏至后台静默运行，手机端防窥面板仍保持正常工作。")
         else:
-            # 正常模式下，点击关闭为真关闭退出
+            # 正常模式，或者面试已停止状态下，点击关闭为真关闭正常退出
             self._stop_listening()
             self.root.destroy()
 
