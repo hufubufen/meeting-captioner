@@ -54,6 +54,11 @@ class SettingsDialog(tk.Toplevel):
         self.rerank_model_var = tk.StringVar(value=config.get("rerank_model", ""))
         tk.Entry(frame, textvariable=self.rerank_model_var, width=60, **style).pack(fill=tk.X, pady=(0, 10))
 
+        # Web Connection PIN
+        tk.Label(frame, text="物理防窥连接密码 (可选，留空则每次冷启动时随机生成):", **{k: v for k, v in style.items() if k in ("bg", "fg", "font")}, anchor="w").pack(fill=tk.X, pady=(0, 2))
+        self.web_pin_var = tk.StringVar(value=config.get("web_pin", ""))
+        tk.Entry(frame, textvariable=self.web_pin_var, width=60, **style).pack(fill=tk.X, pady=(0, 10))
+
         # 测试连接按钮
         self.test_status = tk.Label(frame, text="", bg="#1e1e2e", fg="#888888", font=("Microsoft YaHei UI", 9))
         self.test_status.pack(fill=tk.X, pady=(0, 5))
@@ -104,6 +109,7 @@ class SettingsDialog(tk.Toplevel):
             "api_key": self.api_key_var.get().strip(),
             "model": self.model_var.get().strip(),
             "rerank_model": self.rerank_model_var.get().strip(),
+            "web_pin": self.web_pin_var.get().strip(),
         }
         if self.on_save:
             self.on_save(self.result)

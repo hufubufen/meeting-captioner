@@ -116,6 +116,13 @@ class CaptionerUI:
         self._load_config()
         self._load_documents()
 
+        # 手机防窥端生命周期全局唯一连接密钥 (PIN)
+        self.web_pin = self.config.get("web_pin", "")
+        if not self.web_pin:
+            import random
+            chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+            self.web_pin = "".join(random.choice(chars) for _ in range(6))
+
         # 配置全局 ttk 控件样式 (消除默认的白底灰边)
         self.style = ttk.Style()
         self.style.theme_use('clam')
@@ -270,9 +277,11 @@ class CaptionerUI:
             self.config["api_key"] = result["api_key"]
             self.config["model"] = result["model"]
             self.config["rerank_model"] = result["rerank_model"]
+            self.config["web_pin"] = result["web_pin"]
+            self.web_pin = result["web_pin"]
             self.selected_model.set(result["model"])
             self._save_config()
-            logger.info(f"[设置] 界面配置已保存: base_url={result['base_url']}, model={result['model']}")
+            logger.info(f"[设置] 界面配置已保存: base_url={result['base_url']}, model={result['model']}, web_pin={result['web_pin']}")
             if self.is_running:
                 messagebox.showinfo("提示", "设置已保存，重启后生效。", parent=self.root)
 
@@ -741,7 +750,7 @@ class CaptionerUI:
         if self.web_server is not None and self.web_server.is_alive():
             return
         try:
-            self.web_server = SuggestionWebServer()
+            self.web_server = SuggestionWebServer(pin=self.web_pin)
             self.web_server.on_stealth_toggle = lambda mode: self.root.after(
                 0, lambda: self._toggle_stealth_mode(mode)
             )
@@ -751,8 +760,7 @@ class CaptionerUI:
             def _fetch_ip():
                 time.sleep(0.5)
                 ip = SuggestionWebServer._get_local_ip()
-                pin = self.web_server._pin if self.web_server else ""
-                url = f"http://{ip}:{SuggestionWebServer.PORT}/?key={pin}"
+                url = f"http://{ip}:{SuggestionWebServer.PORT}/?key={self.web_pin}"
                 
                 # 点击复制到系统剪贴板
                 def _copy_url(event=None):

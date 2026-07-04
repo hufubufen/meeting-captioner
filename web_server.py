@@ -20,7 +20,7 @@ class SuggestionWebServer(threading.Thread):
 
     PORT = 8765
 
-    def __init__(self):
+    def __init__(self, pin=None):
         super().__init__(daemon=True)
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
@@ -33,9 +33,12 @@ class SuggestionWebServer(threading.Thread):
         self._stealth_mode = False
         self.on_stealth_toggle = None  # 回调: callback(mode: bool) -> None
         
-        # 升级为高强度 6 位数字与小写字母混合 PIN 码
-        chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-        self._pin = "".join(random.choice(chars) for _ in range(6))
+        if pin:
+            self._pin = pin
+        else:
+            # 升级为高强度 6 位数字与小写字母混合 PIN 码
+            chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+            self._pin = "".join(random.choice(chars) for _ in range(6))
         
         # 安全加固：IP限流与爆破拦截
         self._ip_fail_count = {}   # {ip: 连续错误次数}
