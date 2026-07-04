@@ -149,6 +149,9 @@ class CaptionerUI:
         if getattr(self, "is_first_run", False):
             self.root.after(600, lambda: self._open_settings(is_first_run=True))
 
+        # 劫持窗口关闭 (✕) 按钮，实现伪装状态下的假关闭（后台静默隐藏运行）
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close_request)
+
     def _make_flat_button(self, parent, text, command, style_type="secondary", **kwargs):
         """创建一个带鼠标悬停亮化微交互的扁平化现代按钮"""
         bg_normal, bg_hover = BTN_COLOR_MAP.get(style_type, BTN_COLOR_MAP["secondary"])
@@ -719,6 +722,17 @@ class CaptionerUI:
         self._append_caption("系统", "已停止监听")
         self._append_ai("系统", "AI 分析已停止")
 
+    def _on_close_request(self):
+        """当用户点击关闭窗口 (✕) 时触发"""
+        if hasattr(self, 'stealth_mode') and self.stealth_mode:
+            # 如果处于伪装模式下被要求关闭，则自动在物理桌面隐藏窗口（假关闭后台静默运行）
+            self.root.withdraw()
+            logger.info("[安全防窥] 触发假关闭防御：已将主窗口隐藏至后台静默运行，手机端防窥面板仍保持正常工作。")
+        else:
+            # 正常模式下，点击关闭为真关闭退出
+            self._stop_listening()
+            self.root.destroy()
+
     # ------------------------------------------------------------------
     # 伪装模式
     # ------------------------------------------------------------------
@@ -744,6 +758,7 @@ class CaptionerUI:
         self.stealth_mode = False
         self.stealth_frame.pack_forget()
         self.root.configure(bg=BG_MAIN)
+        self.root.deiconify()
         self.status_frame.pack(fill=tk.X, padx=10, pady=(5, 2))
         self.caption_label.pack(fill=tk.X, padx=10, pady=(5, 2))
         self.caption_frame.pack(fill=tk.BOTH, expand=False, padx=10, pady=2)
