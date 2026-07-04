@@ -2,6 +2,10 @@
 
 *Read this in [简体中文](#简体中文) | [English](#english)*
 
+> 🌟 **如果您觉得这个项目对您有所帮助，请在 GitHub 上点个 Star ⭐ 支持一下作者吧！您的支持是作者持续优化与迭代的最大动力！**
+> 
+> 🔗 **GitHub 源码主页**: [github.com/hufubufen/meeting-captioner](https://github.com/hufubufen/meeting-captioner)
+
 ---
 
 ## 简体中文

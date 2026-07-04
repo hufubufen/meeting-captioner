@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# ============================================================================
+# Meeting Captioner & AI Interview Assistant
+# GitHub: https://github.com/hufubufen/meeting-captioner
+# 💡 觉得好用欢迎给作者点个 Star ⭐️ 支持一下！
+# ============================================================================
 import os
 import threading
 import time

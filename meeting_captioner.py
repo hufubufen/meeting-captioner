@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# ============================================================================
+# Meeting Captioner & AI Interview Assistant
+# GitHub: https://github.com/hufubufen/meeting-captioner
+# 💡 觉得好用欢迎给作者点个 Star ⭐️ 支持一下！
+# ============================================================================
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # 修复 conda+pip OpenMP 冲突
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
@@ -487,6 +492,21 @@ class CaptionerUI:
             button_frame, "💾 保存记录", self._save_record, style_type="secondary"
         )
         self.save_btn.pack(side=tk.RIGHT, padx=(6, 0))
+
+        # GitHub 开源与投星支持超链接 Label
+        github_link = tk.Label(
+            button_frame, text="⭐ 给个Star支持开源作者", fg="#38bdf8", bg=BG_MAIN,
+            font=("Microsoft YaHei UI", 9, "underline"), cursor="hand2"
+        )
+        github_link.pack(side=tk.RIGHT, padx=15)
+        
+        # 绑定点击事件，自动用浏览器打开仓库
+        import webbrowser
+        github_link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/hufubufen/meeting-captioner"))
+        
+        # 绑定悬浮 Hover 颜色反馈
+        github_link.bind("<Enter>", lambda e: github_link.configure(fg="#34d399"))
+        github_link.bind("<Leave>", lambda e: github_link.configure(fg="#38bdf8"))
 
     def _create_text_input(self):
         input_frame = tk.Frame(self.root, bg=BG_MAIN, height=40)
