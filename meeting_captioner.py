@@ -96,7 +96,8 @@ class CaptionerUI:
         self.is_running = False
         self.ai_paused = False
         self.text_only_mode = tk.BooleanVar(value=False)
-        self.mic_mode = tk.BooleanVar(value=False)  # True = 麦克风模式, False = 系统音频
+        # 支持三态音频源选择：speaker (仅系统音频), mic (仅麦克风), dual (双音合流)
+        self.audio_source = tk.StringVar(value="speaker")
         self.config = {}
         self.kb_text = ""
         self.resume_text = ""
@@ -544,18 +545,26 @@ class CaptionerUI:
         if self.is_running:
             messagebox.showwarning("提示", "请先停止当前面试再切换音频模式")
             return
-        current = self.mic_mode.get()
-        self.mic_mode.set(not current)
-        if self.mic_mode.get():
-            self.mic_toggle_btn.config(text="📱 麦克风模式", bg="#d97706", activebackground="#f59e0b")
-            # 绑定麦克风模式时的Hover颜色 (变更为琥珀黄警告色系)
+        curr = self.audio_source.get()
+        if curr == "speaker":
+            # 切换到仅麦克风模式 (琥珀黄)
+            self.audio_source.set("mic")
+            self.mic_toggle_btn.config(text="🎤 仅麦克风", bg="#d97706", activebackground="#f59e0b")
             self.mic_toggle_btn.bind("<Enter>", lambda e: self.mic_toggle_btn.config(bg="#f59e0b"))
             self.mic_toggle_btn.bind("<Leave>", lambda e: self.mic_toggle_btn.config(bg="#d97706"))
             self.device_label.config(text="[麦克风输入]", fg="#d97706")
+        elif curr == "mic":
+            # 切换到双通道合流模式 (科技蓝)
+            self.audio_source.set("dual")
+            self.mic_toggle_btn.config(text="🔗 双音合流", bg="#2563eb", activebackground="#3b82f6")
+            self.mic_toggle_btn.bind("<Enter>", lambda e: self.mic_toggle_btn.config(bg="#3b82f6"))
+            self.mic_toggle_btn.bind("<Leave>", lambda e: self.mic_toggle_btn.config(bg="#2563eb"))
+            self.device_label.config(text="[系统音频+麦克风]", fg="#38bdf8")
         else:
+            # 切换回仅系统音频模式 (石墨灰)
+            self.audio_source.set("speaker")
             bg_normal, bg_hover = BTN_COLOR_MAP["secondary"]
-            self.mic_toggle_btn.config(text="🎤 系统音频", bg=bg_normal, activebackground=bg_hover)
-            # 恢复普通的石墨灰Hover
+            self.mic_toggle_btn.config(text="💻 仅系统音频", bg=bg_normal, activebackground=bg_hover)
             self.mic_toggle_btn.bind("<Enter>", lambda e: self.mic_toggle_btn.config(bg=bg_hover))
             self.mic_toggle_btn.bind("<Leave>", lambda e: self.mic_toggle_btn.config(bg=bg_normal))
             self.device_label.config(text="[系统音频]", fg=FG_MUTED)
@@ -621,15 +630,21 @@ class CaptionerUI:
             self.ai_status_label.config(text="AI: 运行中", fg="#34d399")
 
             # 启动音频采集线程
-            capture_mode = "mic" if self.mic_mode.get() else "speaker"
-            self.audio_thread = AudioCaptureThread(self.audio_queue, capture_mode=capture_mode)
+            source_mode = self.audio_source.get()
+            self.audio_thread_mic = None
+            if source_mode == "dual":
+                self.audio_thread = AudioCaptureThread(self.audio_queue, capture_mode="speaker")
+                self.audio_thread_mic = AudioCaptureThread(self.audio_queue, capture_mode="mic")
+                self.audio_thread.start()
+                self.audio_thread_mic.start()
+            else:
+                self.audio_thread = AudioCaptureThread(self.audio_queue, capture_mode=source_mode)
+                self.audio_thread.start()
             
             # 启动转录线程
             self.transcription_thread = TranscriptionThread(
                 self.audio_queue, self.text_queue, self.ai_queue, use_gpu=True
             )
-
-            self.audio_thread.start()
             self.transcription_thread.start()
 
             # 启动 AI 分析线程
@@ -646,7 +661,12 @@ class CaptionerUI:
             )
             self.ai_thread.start()
 
-            mode_label = "麦克风" if self.mic_mode.get() else "系统音频"
+            if source_mode == "dual":
+                mode_label = "系统音频+麦克风合流"
+            elif source_mode == "mic":
+                mode_label = "仅麦克风"
+            else:
+                mode_label = "仅系统音频"
             self._append_caption("系统", f"开始监听 ({mode_label})... AI 辅助已就绪")
             self._append_ai("系统", f"AI 分析已就绪 ({mode_label}模式)，等待面试官提问...")
             self._start_web_server()

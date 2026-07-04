@@ -72,7 +72,7 @@ class TestUITransitions(unittest.TestCase):
         """测试 1: 验证界面初始化状态"""
         self.assertFalse(self.app.is_running)
         self.assertFalse(self.app.ai_paused)
-        self.assertFalse(self.app.mic_mode.get())
+        self.assertEqual(self.app.audio_source.get(), "speaker")
         
         # 验证初始按钮状态
         self.assertEqual(self.app.start_btn['state'], tk.NORMAL)
@@ -120,10 +120,10 @@ class TestUITransitions(unittest.TestCase):
 
     def test_mic_mode_interlock_transitions(self):
         """测试 3: 验证麦克风模式切换及其互锁保护限制 (非运行中可切换，运行中拦截修改)"""
-        # 1. 点击切换到麦克风模式
+        # 1. 点击切换到仅麦克风模式
         self.app._toggle_mic_mode()
-        self.assertTrue(self.app.mic_mode.get())
-        self.assertEqual(self.app.mic_toggle_btn['text'], "📱 麦克风模式")
+        self.assertEqual(self.app.audio_source.get(), "mic")
+        self.assertEqual(self.app.mic_toggle_btn['text'], "🎤 仅麦克风")
         
         # 2. 模拟启动
         self.app.config = {"api_key": "dummy_key"}
@@ -132,14 +132,19 @@ class TestUITransitions(unittest.TestCase):
         
         # 3. 运行中尝试再次点击切换模式 (应被警告拦截，模式不改变)
         self.app._toggle_mic_mode()
-        self.assertTrue(self.app.mic_mode.get()) # 模式应保持不变
+        self.assertEqual(self.app.audio_source.get(), "mic") # 模式应保持不变
         self.mock_showwarning.assert_called_with("提示", "请先停止当前面试再切换音频模式")
         
-        # 4. 停止面试，模式应可以被允许切换回系统音频
+        # 4. 停止面试，模式应可以被允许切换为双通道合流
         self.app._stop_listening()
         self.app._toggle_mic_mode()
-        self.assertFalse(self.app.mic_mode.get())
-        self.assertEqual(self.app.mic_toggle_btn['text'], "🎤 系统音频")
+        self.assertEqual(self.app.audio_source.get(), "dual")
+        self.assertEqual(self.app.mic_toggle_btn['text'], "🔗 双音合流")
+        
+        # 5. 再次点击，切回仅系统音频
+        self.app._toggle_mic_mode()
+        self.assertEqual(self.app.audio_source.get(), "speaker")
+        self.assertEqual(self.app.mic_toggle_btn['text'], "💻 仅系统音频")
 
     def test_clear_text_transitions(self):
         """测试 4: 验证文本清空逻辑与文本域的状态更新"""
