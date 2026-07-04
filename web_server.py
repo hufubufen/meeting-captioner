@@ -281,8 +281,13 @@ class SuggestionWebServer(threading.Thread):
 
     def stop(self):
         self._stop_event.set()
-        try:
-            self._httpd.shutdown()
-        except Exception:
-            pass
+        if hasattr(self, '_httpd') and self._httpd:
+            try:
+                self._httpd.shutdown()
+            except Exception:
+                pass
+            try:
+                self._httpd.server_close() # 必须显式释放 TCP 端口套接字绑定，防范二次启动OSError冲突
+            except Exception:
+                pass
         self.join(timeout=2)
