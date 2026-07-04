@@ -346,37 +346,31 @@ class CaptionerUI:
         )
         self.detail_mode_label.pack(side=tk.LEFT, padx=10)
 
-        self.web_url_label = tk.Label(
-            status_frame, text="", fg="#58a6ff", bg=BG_MAIN,
-            font=("Microsoft YaHei UI", 9, "underline")
-        )
-        self.web_url_label.pack(side=tk.LEFT, padx=15)
-
-        model_label = tk.Label(
-            status_frame, text="模型:", fg=FG_MUTED, bg=BG_MAIN,
+        self.device_label = tk.Label(
+            status_frame, text="[系统音频]", fg=FG_MUTED, bg=BG_MAIN,
             font=("Microsoft YaHei UI", 9)
         )
-        model_label.pack(side=tk.LEFT, padx=(15, 5))
-
-        self.model_combo = ttk.Combobox(
-            status_frame, textvariable=self.selected_model,
-            values=self.available_models, state="normal",
-            width=14, font=("Microsoft YaHei UI", 9)
-        )
-        self.model_combo.pack(side=tk.LEFT, padx=5)
-        self.model_combo.bind("<<ComboboxSelected>>", self._on_model_change)
+        self.device_label.pack(side=tk.RIGHT, padx=(5, 10))
 
         self.settings_btn = self._make_flat_button(
             status_frame, "⚙ 设置", self._open_settings, style_type="secondary",
             font=("Microsoft YaHei UI", 9), padx=8, pady=2
         )
-        self.settings_btn.pack(side=tk.LEFT, padx=(8, 0))
+        self.settings_btn.pack(side=tk.RIGHT, padx=8)
 
-        self.device_label = tk.Label(
-            status_frame, text="[系统音频]", fg=FG_MUTED, bg=BG_MAIN,
+        self.model_combo = ttk.Combobox(
+            status_frame, textvariable=self.selected_model,
+            values=self.available_models, state="normal",
+            width=12, font=("Microsoft YaHei UI", 9)
+        )
+        self.model_combo.pack(side=tk.RIGHT, padx=5)
+        self.model_combo.bind("<<ComboboxSelected>>", self._on_model_change)
+
+        model_label = tk.Label(
+            status_frame, text="模型:", fg=FG_MUTED, bg=BG_MAIN,
             font=("Microsoft YaHei UI", 9)
         )
-        self.device_label.pack(side=tk.RIGHT, padx=5)
+        model_label.pack(side=tk.RIGHT, padx=(10, 5))
 
         # ========== 上半区：字幕显示 ==========
         caption_label = tk.Label(
@@ -442,46 +436,56 @@ class CaptionerUI:
 
         self.stealth_mode = False
         self.stealth_frame = tk.Frame(self.root, bg="#ffffff")
+        self.info_bar = None
+        self.info_label = None
 
     def _create_buttons(self):
-        button_frame = tk.Frame(self.root, bg=BG_MAIN, height=60)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=12)
+        button_frame = tk.Frame(self.root, bg=BG_MAIN)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 12))
         self.button_frame = button_frame
 
+        # 第一行：核心控制区 (开始、暂停、停止、一键保命伪装)
+        row1_frame = tk.Frame(button_frame, bg=BG_MAIN)
+        row1_frame.pack(fill=tk.X, side=tk.TOP, pady=(0, 6))
+
         self.start_btn = self._make_flat_button(
-            button_frame, "▶ 开始面试", self._start_listening, style_type="primary"
+            row1_frame, "▶ 开始面试", self._start_listening, style_type="primary"
         )
         self.start_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.ai_toggle_btn = self._make_flat_button(
-            button_frame, "⏸ 暂停收音 (空格)", self._toggle_ai, style_type="primary"
+            row1_frame, "⏸ 暂停收音 (空格)", self._toggle_ai, style_type="primary"
         )
         self.ai_toggle_btn.pack(side=tk.LEFT, padx=6)
         self.ai_toggle_btn.config(state=tk.DISABLED, bg="#1e293b", fg="#475569")  # 初始灰色禁用状态
 
         self.stop_btn = self._make_flat_button(
-            button_frame, "■ 停止面试", self._stop_listening, style_type="danger"
+            row1_frame, "■ 停止面试", self._stop_listening, style_type="danger"
         )
         self.stop_btn.pack(side=tk.LEFT, padx=6)
         self.stop_btn.config(state=tk.DISABLED, bg="#1e293b", fg="#475569")
 
-        self.clear_btn = self._make_flat_button(
-            button_frame, "✕ 清空", self._clear_text, style_type="secondary"
+        self.stealth_btn = self._make_flat_button(
+            row1_frame, "🖥 伪装模式", self._toggle_stealth_btn, style_type="stealth"
         )
-        self.clear_btn.pack(side=tk.LEFT, padx=6)
+        self.stealth_btn.pack(side=tk.RIGHT, padx=(6, 0))
+
+        # 第二行：辅助与开源贡献区 (清空、音源切换、保存记录、文本测试、开源引流)
+        row2_frame = tk.Frame(button_frame, bg=BG_MAIN)
+        row2_frame.pack(fill=tk.X, side=tk.TOP, pady=(6, 0))
+
+        self.clear_btn = self._make_flat_button(
+            row2_frame, "✕ 清空", self._clear_text, style_type="secondary"
+        )
+        self.clear_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.mic_toggle_btn = self._make_flat_button(
-            button_frame, "🎤 系统音频", self._toggle_mic_mode, style_type="secondary"
+            row2_frame, "🎤 系统音频", self._toggle_mic_mode, style_type="secondary"
         )
         self.mic_toggle_btn.pack(side=tk.LEFT, padx=6)
 
-        self.stealth_btn = self._make_flat_button(
-            button_frame, "🖥 伪装模式", self._toggle_stealth_btn, style_type="stealth"
-        )
-        self.stealth_btn.pack(side=tk.LEFT, padx=6)
-
         self.text_only_cb = tk.Checkbutton(
-            button_frame, text="仅文本测试", variable=self.text_only_mode,
+            row2_frame, text="仅文本测试", variable=self.text_only_mode,
             bg=BG_MAIN, fg=FG_MUTED, selectcolor=BG_MAIN,
             activebackground=BG_MAIN, activeforeground=FG_TEXT,
             font=("Microsoft YaHei UI", 9), bd=0, highlightthickness=0
@@ -489,13 +493,13 @@ class CaptionerUI:
         self.text_only_cb.pack(side=tk.RIGHT, padx=10)
 
         self.save_btn = self._make_flat_button(
-            button_frame, "💾 保存记录", self._save_record, style_type="secondary"
+            row2_frame, "💾 保存记录", self._save_record, style_type="secondary"
         )
         self.save_btn.pack(side=tk.RIGHT, padx=(6, 0))
 
         # GitHub 开源与投星支持超链接 Label
         github_link = tk.Label(
-            button_frame, text="⭐ 给个Star支持开源作者", fg="#38bdf8", bg=BG_MAIN,
+            row2_frame, text="⭐ 给个Star支持开源作者", fg="#38bdf8", bg=BG_MAIN,
             font=("Microsoft YaHei UI", 9, "underline"), cursor="hand2"
         )
         github_link.pack(side=tk.RIGHT, padx=15)
@@ -811,49 +815,71 @@ class CaptionerUI:
                 0, lambda: self._toggle_stealth_mode(mode)
             )
             self.web_server.start()
-            self.web_url_label.config(text="📱 正在获取地址...", fg="#38bdf8", cursor="hand2")
 
             def _fetch_ip():
                 time.sleep(0.5)
                 ip = SuggestionWebServer._get_local_ip()
                 url = f"http://{ip}:{SuggestionWebServer.PORT}/?key={self.web_pin}"
-                
-                # 点击复制到系统剪贴板
-                def _copy_url(event=None):
-                    try:
-                        self.root.clipboard_clear()
-                        self.root.clipboard_append(url)
-                        self.web_url_label.config(text="✓ 链接已复制！", fg="#34d399")
-                        # 1.2 秒后复原显示
-                        self.root.after(1200, lambda: self.web_url_label.config(text=f"📱 {url}", fg="#38bdf8"))
-                    except Exception as err:
-                        logger.error(f"复制链接失败: {err}")
-                
-                # 悬停超链接亮起反馈
-                def _on_hover(event=None):
-                    self.web_url_label.config(fg="#60a5fa")
-                    
-                def _on_leave(event=None):
-                    current_txt = self.web_url_label.cget("text")
-                    if "已复制" not in current_txt:
-                        self.web_url_label.config(fg="#38bdf8")
-
-                self.root.after(0, lambda: self.web_url_label.config(text=f"📱 {url}"))
-                self.web_url_label.bind("<Button-1>", _copy_url)
-                self.web_url_label.bind("<Enter>", _on_hover)
-                self.web_url_label.bind("<Leave>", _on_leave)
+                self.root.after(0, lambda: self._show_web_info_bar(url))
 
             threading.Thread(target=_fetch_ip, daemon=True).start()
         except Exception as e:
-            self.web_url_label.config(text=f"⚠ Web 启动失败", fg="#ef4444")
             logger.error(f"[Web] 启动失败: {e}")
             self.web_server = None
+
+    def _show_web_info_bar(self, url):
+        """在状态栏下方、字幕框上方动态构建并展出局域网就绪链接卡片"""
+        if hasattr(self, 'info_bar') and self.info_bar:
+            try:
+                self.info_bar.destroy()
+            except Exception:
+                pass
+            self.info_bar = None
+
+        # 创建一个带有圆角的科技感淡蓝色就绪提示条
+        info_bar = tk.Frame(self.root, bg="#1e293b", height=32, bd=0)
+        # 挂载在 status_frame 之下，caption_label 之前
+        info_bar.pack(fill=tk.X, padx=15, pady=(4, 4), after=self.status_frame)
+        info_bar.pack_propagate(False)
+        self.info_bar = info_bar
+
+        info_text = f"🔗 局域网物理二屏已就绪，点击一键复制访问链接: {url}"
+        info_label = tk.Label(
+            info_bar, text=info_text, fg="#38bdf8", bg="#1e293b",
+            font=("Microsoft YaHei UI", 9, "bold"), cursor="hand2"
+        )
+        info_label.pack(fill=tk.BOTH, expand=True)
+        self.info_label = info_label
+
+        # 点击一键复制，并有变色反馈
+        def _copy_url(event=None):
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(url)
+                self.root.update()
+                info_label.config(text="✓ 链接已成功复制到剪贴板！手机浏览器直接粘贴访问即可！", fg="#34d399")
+                self.root.after(1500, lambda: info_label.config(text=info_text, fg="#38bdf8") if info_label.winfo_exists() else None)
+            except Exception as err:
+                logger.error(f"复制链接失败: {err}")
+
+        info_label.bind("<Button-1>", _copy_url)
+        info_label.bind("<Enter>", lambda e: info_label.config(fg="#60a5fa") if info_label.winfo_exists() else None)
+        info_label.bind("<Leave>", lambda e: info_label.config(fg="#38bdf8") if info_label.winfo_exists() else None)
 
     def _stop_web_server(self):
         if self.web_server is not None:
             self.web_server.stop()
             self.web_server = None
-        self.web_url_label.config(text="")
+        
+        # 销毁局域网提示条
+        if hasattr(self, 'info_bar') and self.info_bar:
+            try:
+                self.info_bar.destroy()
+            except Exception:
+                pass
+            self.info_bar = None
+            self.info_label = None
+
         self._exit_stealth_mode()
 
     def _clear_all_queues(self):
