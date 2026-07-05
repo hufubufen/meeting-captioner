@@ -1130,6 +1130,57 @@ def main():
         # 端口未被占用，说明没有前置实例在运行，正常启动
         pass
 
+    # === 授权激活与试用期校验 ===
+    from license_manager import LicenseManager
+    import tkinter.messagebox as messagebox
+    import tkinter.simpledialog as simpledialog
+    import sys
+
+    lic_mgr = LicenseManager()
+    is_valid, status_msg = lic_mgr.verify_license()
+    logger.info(f"[授权系统] 状态: {status_msg}")
+
+    if not is_valid:
+        # 创建一个临时隐藏的 Tk 实例用作弹窗的 parent，防范直接弹窗闪退
+        temp_root = tk.Tk()
+        temp_root.withdraw()
+        
+        machine_id = lic_mgr.get_machine_id()
+        # 自动将用户的专属机器码复制到系统剪贴板，极大方便用户一键发送给作者
+        try:
+            temp_root.clipboard_clear()
+            temp_root.clipboard_append(machine_id)
+            temp_root.update()
+            clip_tip = "（已自动复制到您的剪贴板，请直接粘贴发给作者）"
+        except Exception:
+            clip_tip = ""
+
+        # 弹窗提示
+        messagebox.showinfo(
+            "试用已到期 / 未激活",
+            f"您的3天免费试用期已结束，或者当前设备未激活授权。\n\n"
+            f"您的电脑专属机器码为:\n👉 {machine_id} {clip_tip}\n\n"
+            f"请加作者微信或发送机器码索取激活码。",
+            parent=temp_root
+        )
+
+        # 弹出输入激活码的对话框
+        user_key = simpledialog.askstring(
+            "软件激活",
+            f"请输入针对当前机器码的专属激活码以解锁软件:\n(机器码: {machine_id})",
+            parent=temp_root
+        )
+        
+        if user_key:
+            save_ok, save_msg = lic_mgr.save_license(user_key)
+            if save_ok:
+                messagebox.showinfo("激活成功", "软件激活成功！请重新启动程序。", parent=temp_root)
+            else:
+                messagebox.showerror("激活失败", f"激活失败: {save_msg}", parent=temp_root)
+        
+        temp_root.destroy()
+        sys.exit(0)
+
     logger.info("=" * 50)
     logger.info("会议字幕 + AI 面试辅助工具 (重构模块化 & 规范日志版)")
     logger.info("=" * 50)
