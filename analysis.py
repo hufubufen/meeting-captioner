@@ -67,7 +67,7 @@ class AIAnalysisThread(threading.Thread):
         """返回预置的语义分流触发问题及标签"""
         triggers = []
         
-        # 1. 自我介绍
+        # 自我介绍 (这是通用且必须精准原样背诵的意图直连)
         triggers.extend([
             ("请做一个自我介绍", "self_intro"),
             ("简单介绍下你自己", "self_intro"),
@@ -77,65 +77,6 @@ class AIAnalysisThread(threading.Thread):
             ("自我介绍一下", "self_intro"),
         ])
         
-        # 2. 四大项目介绍
-        triggers.extend([
-            ("介绍一下第一个项目矿井防撞系统", "project_intro_1"),
-            ("讲讲你的矿井防撞项目", "project_intro_1"),
-            ("说说那个无轨胶轮车防撞系统的项目", "project_intro_1"),
-            ("第一个项目做了什么怎么做的", "project_intro_1"),
-            
-            ("介绍一下第二个项目煤矸识别", "project_intro_2"),
-            ("讲讲你的煤矸识别放煤项目", "project_intro_2"),
-            ("说说双模态放煤声音振动识别项目", "project_intro_2"),
-            ("第二个项目做了什么怎么做的", "project_intro_2"),
-            
-            ("介绍一下第三个项目皮带撕裂异物检测", "project_intro_3"),
-            ("讲讲你的皮带机跑偏撕裂检测项目", "project_intro_3"),
-            ("说说皮带异物撕裂检测那个项目", "project_intro_3"),
-            
-            ("介绍一下第四个项目农田路径植株识别", "project_intro_4"),
-            ("讲讲你做过的农田路径识别项目", "project_intro_4"),
-            ("说说第四个农业行间路径识别项目", "project_intro_4"),
-        ])
-
-        # 3. 各项目难点
-        triggers.extend([
-            ("第一个项目遇到了什么困难和挑战", "project_difficulty_1"),
-            ("你觉得防撞项目里有什么技术难点", "project_difficulty_1"),
-            ("第一个项目最大的痛点是什么", "project_difficulty_1"),
-            
-            ("第二个项目遇到了什么困难和挑战", "project_difficulty_2"),
-            ("煤矸识别项目有什么技术难点", "project_difficulty_2"),
-            ("第二个项目最大的痛点是什么", "project_difficulty_2"),
-            
-            ("第三个项目遇到了什么困难和挑战", "project_difficulty_3"),
-            ("皮带机检测项目有什么技术难点", "project_difficulty_3"),
-            
-            ("第四个项目遇到了什么困难和挑战", "project_difficulty_4"),
-            ("农业作物路径项目有什么技术难点", "project_difficulty_4"),
-        ])
-
-        # 4. 各项目创新点
-        triggers.extend([
-            ("第一个项目有什么创新和亮点", "project_innovation_1"),
-            ("这个无轨防撞系统有什么新颖的地方吗", "project_innovation_1"),
-            
-            ("第二个项目有什么创新和亮点", "project_innovation_2"),
-            ("煤矸识别系统有什么新颖的地方吗", "project_innovation_2"),
-            
-            ("第三个项目有什么创新和亮点", "project_innovation_3"),
-            
-            ("第四个项目有什么创新和亮点", "project_innovation_4"),
-        ])
-
-        # 5. 反问面试官
-        triggers.extend([
-            ("你有什么想问我的吗", "ask_interviewer"),
-            ("你有什么问题要问我", "ask_interviewer"),
-            ("你有什么要问我的吗", "ask_interviewer"),
-            ("反问我几个问题", "ask_interviewer"),
-        ])
-
         return triggers
 
     # ------------------------------------------------------------------
@@ -1105,11 +1046,7 @@ class AIAnalysisThread(threading.Thread):
                             self.conversation_history.append({"role": "assistant", "content": extracted})
                         return extracted
                 
-                # 防御安全锁：如果是反问面试官意图，必须在问题中检测到邀请反问的强置信度关键词，否则拦截降级回退
-                if intent_tag == "ask_interviewer":
-                    import re
-                    if not re.search(r'想问|要问|问题|反问|任何疑问|补充|想要了解', question):
-                        intent_tag = None  # 剥夺直连标签，迫使其退回到普通的大模型自适应推理
+
 
         # === 2. 正常 RAG 通用知识库检索匹配 ===
         direct_kb_context = ""
@@ -1226,17 +1163,6 @@ class AIAnalysisThread(threading.Thread):
         if intent_tag == "self_intro":
             duration = self._intro_duration(question)
             return self._extract_intro_from_kb(self.knowledge_base_text, duration)
-        elif intent_tag.startswith("project_intro_"):
-            proj_id = int(intent_tag.split("_")[-1])
-            return self._extract_project_intro_from_kb(self.knowledge_base_text, question, proj_id)
-        elif intent_tag.startswith("project_difficulty_"):
-            proj_id = int(intent_tag.split("_")[-1])
-            return self._extract_difficulty_from_kb(self.knowledge_base_text, question, proj_id)
-        elif intent_tag.startswith("project_innovation_"):
-            proj_id = int(intent_tag.split("_")[-1])
-            return self._extract_innovation_from_kb(self.knowledge_base_text, question, proj_id)
-        elif intent_tag == "ask_interviewer":
-            return self._extract_ask_interviewer_from_kb(self.knowledge_base_text, question)
         return None
 
     def clear_history(self):
