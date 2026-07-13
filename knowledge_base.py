@@ -4,7 +4,12 @@ import os
 import logging
 
 logger = logging.getLogger("captioner")
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
+# 兼容打包环境下的外部根目录定位，防止动态寻找 _internal 内部
+import sys
+if getattr(sys, 'frozen', False):
+    TOOL_DIR = os.path.dirname(sys.executable)
+else:
+    TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class KnowledgeBase:
     """从指定子目录加载文档文件

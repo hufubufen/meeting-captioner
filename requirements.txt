@@ -18,9 +18,11 @@ transformers>=4.35.0
 torch>=2.0.0
 torchaudio>=2.0.0
 
-# 各种格式文档加载解析 (docx, txt, md, pdf, ppt, xlsx)
 python-docx>=0.8.11
 pdfplumber>=0.10.0
 openpyxl>=3.0.0
 python-pptx>=0.6.0
 docx2txt>=0.8
+
+# 全局快捷键与屏幕截图
+keyboard>=0.13.5

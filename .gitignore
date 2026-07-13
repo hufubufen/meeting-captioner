@@ -37,3 +37,13 @@ pyvenv.cfg
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 本地调试临时脚本与个人面试专属测试知识库目录
+start_debug.bat
+安维尔/
+嵌入式知识库/
+感知算法测试岗/
+算法知识库/
+dist/
+build/
+*.spec

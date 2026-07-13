@@ -37,6 +37,12 @@ class SuggestionWebServer(threading.Thread):
         # 伪装模式：开启后桌面端显示纯白记事本界面，AI内容只在手机可见
         self._stealth_mode = False
         self.on_stealth_toggle = None  # 回调: callback(mode: bool) -> None
+        self.on_manual_ask = None  # 手机端手动微调问题回调: callback(text: str) -> None
+        self._latest_caption = {
+            "text": "等待说话...",
+            "timestamp": "00:00:00"
+        }
+        self._ai_paused = False
         
         if pin:
             self._pin = pin
@@ -62,6 +68,19 @@ class SuggestionWebServer(threading.Thread):
                 "answer": answer,
                 "timestamp": timestamp,
             }
+
+    def update_caption(self, text, timestamp):
+        """转录线程回调：更新最新原始转写字幕"""
+        with self._lock:
+            self._latest_caption = {
+                "text": text,
+                "timestamp": timestamp,
+            }
+
+    def set_paused(self, paused):
+        """AI 控制线程状态更新回调：同步暂停收音状态"""
+        with self._lock:
+            self._ai_paused = paused
 
     @staticmethod
     def _get_local_ip():
@@ -147,7 +166,12 @@ class SuggestionWebServer(threading.Thread):
         server = self
         
         # 1. 尝试读取独立的静态 HTML 文件以达到解耦目的
-        html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+        # 兼容 PyInstaller/Nuitka 打包后的临时解压资源路径
+        import sys
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            html_path = os.path.join(sys._MEIPASS, "index.html")
+        else:
+            html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
         try:
             with open(html_path, 'r', encoding='utf-8') as f:
                 HTML_TEMPLATE = f.read()
@@ -166,41 +190,8 @@ class SuggestionWebServer(threading.Thread):
                 params = parse_qs(parsed.query)
                 client_ip = self.client_address[0]
 
-                # 2. 限流与 IP 封禁防护 (防暴力破译 PIN 码)
-                if client_ip in server._ip_blocklist:
-                    unblock_time = server._ip_blocklist[client_ip]
-                    if time.time() < unblock_time:
-                        self.send_response(429)
-                        self.send_header("Content-Type", "text/plain; charset=utf-8")
-                        self.end_headers()
-                        msg = f"该 IP 登录尝试失败次数过多，已被临时锁定，请于 {int(unblock_time - time.time())} 秒后再试。"
-                        self.wfile.write(msg.encode("utf-8"))
-                        return
-                    else:
-                        # 冷却时间过，自动解封
-                        del server._ip_blocklist[client_ip]
-                        server._ip_fail_count[client_ip] = 0
-
-                # 3. PIN 码安全鉴权
-                if path not in ("/", "/index.html"):
-                    key = params.get("key", [None])[0]
-                    auth_header = self.headers.get("Authorization", "")
-                    if key != server._pin and auth_header != f"Bearer {server._pin}":
-                        # 鉴权失败，IP 惩罚计数递增
-                        server._ip_fail_count[client_ip] = server._ip_fail_count.get(client_ip, 0) + 1
-                        logger.warning(f"[Web安全] 来自 IP {client_ip} 的鉴权失败 ({server._ip_fail_count[client_ip]}/5)")
-                        
-                        if server._ip_fail_count[client_ip] >= 5:
-                            # 连续失败 5 次，加入黑名单，强制封禁 10 分钟 (600秒)
-                            server._ip_blocklist[client_ip] = time.time() + 600
-                            logger.error(f"[Web安全] IP {client_ip} 触发连续登录失败保护，封禁该局域网设备 10 分钟。")
-                        
-                        self.send_response(403)
-                        self.end_headers()
-                        return
-                    else:
-                        # 鉴权成功，清空失败累积
-                        server._ip_fail_count[client_ip] = 0
+                # 已移除局域网 PIN 码与 IP 鉴权限制，放行所有局域网内请求以提供最佳免密秒连体验
+                pass
 
                 # 4. 路由逻辑
                 if path == "/api/stream":
@@ -219,7 +210,16 @@ class SuggestionWebServer(threading.Thread):
                         # 当服务没有被停止，且当前会话没有被新的连接顶替时，持续发送
                         while not server._stop_event.is_set() and server._current_session_id == session_id:
                             with server._lock:
-                                data = json.dumps(server._latest, ensure_ascii=False)
+                                payload = {
+                                    "question": server._latest["question"],
+                                    "answer": server._latest["answer"],
+                                    "timestamp": server._latest["timestamp"],
+                                    "caption_text": server._latest_caption["text"],
+                                    "caption_timestamp": server._latest_caption["timestamp"],
+                                    "stealth_mode": server._stealth_mode,
+                                    "ai_paused": server._ai_paused,
+                                }
+                                data = json.dumps(payload, ensure_ascii=False)
                             self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
                             self.wfile.flush()
                             time.sleep(0.3)
@@ -232,7 +232,16 @@ class SuggestionWebServer(threading.Thread):
                     self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
                     with server._lock:
-                        data = json.dumps(server._latest, ensure_ascii=False)
+                        payload = {
+                            "question": server._latest["question"],
+                            "answer": server._latest["answer"],
+                            "timestamp": server._latest["timestamp"],
+                            "caption_text": server._latest_caption["text"],
+                            "caption_timestamp": server._latest_caption["timestamp"],
+                            "stealth_mode": server._stealth_mode,
+                            "ai_paused": server._ai_paused,
+                        }
+                        data = json.dumps(payload, ensure_ascii=False)
                     self.wfile.write(data.encode("utf-8"))
                 elif path == "/api/stealth":
                     params = parse_qs(parsed.query)
@@ -254,6 +263,21 @@ class SuggestionWebServer(threading.Thread):
                     with server._lock:
                         resp = json.dumps({"stealth_mode": server._stealth_mode}, ensure_ascii=False)
                     self.wfile.write(resp.encode("utf-8"))
+                elif path == "/api/ask":
+                    params = parse_qs(parsed.query)
+                    text = params.get("text", [None])[0]
+                    if text:
+                        if server.on_manual_ask:
+                            try:
+                                server.on_manual_ask(text)
+                            except Exception:
+                                pass
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
                 elif path == "/" or path == "/index.html":
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")

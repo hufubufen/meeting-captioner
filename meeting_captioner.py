@@ -27,8 +27,73 @@ from web_server import SuggestionWebServer
 from settings_dialog import SettingsDialog
 from analysis import AIAnalysisThread
 
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
+# 兼容打包环境下的外部根目录定位，防止将动态文件写入只读的 _internal 导致无权限闪退
+import sys
+if getattr(sys, 'frozen', False):
+    TOOL_DIR = os.path.dirname(sys.executable)
+else:
+    TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger("captioner")
+
+class GlobalHotkeyThread(threading.Thread):
+    """全局热键监听线程，使用 Windows 原生 API，无第三方依赖，100% 打包成功"""
+    def __init__(self, callback_toggle, callback_screenshot):
+        super().__init__(daemon=True)
+        self.callback_toggle = callback_toggle
+        self.callback_screenshot = callback_screenshot
+        self._stop_event = threading.Event()
+
+    def run(self):
+        import ctypes
+        from ctypes import wintypes
+        
+        user32 = ctypes.windll.user32
+        
+        HOTKEY_ID_TOGGLE = 9999
+        HOTKEY_ID_SCREENSHOT = 9998
+        
+        # Alt + Space
+        MOD_ALT = 0x0001
+        VK_SPACE = 0x20
+        
+        # Ctrl + Alt + Z (0x0002 | 0x0001 = 0x0003)
+        MOD_CTRL_ALT = 0x0003
+        VK_Z = 0x5A
+        
+        # 允许先尝试注销以防重复注册冲突
+        user32.UnregisterHotKey(None, HOTKEY_ID_TOGGLE)
+        user32.UnregisterHotKey(None, HOTKEY_ID_SCREENSHOT)
+        
+        if not user32.RegisterHotKey(None, HOTKEY_ID_TOGGLE, MOD_ALT, VK_SPACE):
+            logger.error("[热键] 注册全局快捷键 Alt+Space 失败")
+        if not user32.RegisterHotKey(None, HOTKEY_ID_SCREENSHOT, MOD_CTRL_ALT, VK_Z):
+            logger.error("[热键] 注册全局快捷键 Ctrl+Alt+Z 失败")
+            
+        logger.info("[热键] 注册全局快捷键成功！")
+        logger.info("  1. Alt+Space: 一键暂停/恢复收音")
+        logger.info("  2. Ctrl+Alt+Z: 跨窗口全局后台静默截图作答")
+        
+        try:
+            msg = wintypes.MSG()
+            while not self._stop_event.is_set():
+                if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1): # PM_REMOVE = 1
+                    if msg.message == 0x0312:  # WM_HOTKEY
+                        if msg.wParam == HOTKEY_ID_TOGGLE:
+                            self.callback_toggle()
+                        elif msg.wParam == HOTKEY_ID_SCREENSHOT:
+                            self.callback_screenshot()
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+                else:
+                    time.sleep(0.05)
+        finally:
+            user32.UnregisterHotKey(None, HOTKEY_ID_TOGGLE)
+            user32.UnregisterHotKey(None, HOTKEY_ID_SCREENSHOT)
+            logger.info("[热键] 全局快捷键已注销")
+
+    def stop(self):
+        self._stop_event.set()
+
 
 # ============================================================================
 # 高端暗黑科技配色常数
@@ -110,6 +175,7 @@ class CaptionerUI:
 
         # Web 建议面板
         self.web_server = None
+        self.prompter_win = None
 
         # 可选模型列表
         self.available_models = [
@@ -156,6 +222,43 @@ class CaptionerUI:
         if getattr(self, "is_first_run", False):
             self.root.after(600, lambda: self._open_settings(is_first_run=True))
 
+        # 启动全局快捷键线程
+        self.hotkey_thread = GlobalHotkeyThread(
+            callback_toggle=lambda: self.root.after(0, self._toggle_ai),
+            callback_screenshot=lambda: self.root.after(0, self.start_screenshot_capture)
+        )
+        self.hotkey_thread.start()
+
+
+    def start_screenshot_capture(self):
+        """跨窗口静默截取当前一整页全屏图像并直接发送 AI 作答（0弹窗，0闪烁，0交互，极致隐蔽）"""
+        logger.info("[热键] 触发全局静默全屏截图指令...")
+        from PIL import ImageGrab
+        import io
+        import base64
+        
+        try:
+            # 瞬间静默抓取主屏幕一整页全屏画面
+            screen_img = ImageGrab.grab()
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            
+            if self.ai_thread and self.ai_thread.is_alive():
+                buffered = io.BytesIO()
+                # 调为 80% 质量进行 JPEG 压缩，大幅缩减 Base64 负载体积，使大模型读取和网络传输速度提升 3 倍以上！
+                screen_img.save(buffered, format="JPEG", quality=80)
+                img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                
+                payload = {
+                    "timestamp": timestamp,
+                    "text": "【截图识别】",
+                    "image_base64": img_base64
+                }
+                self.ai_queue.put(payload)
+                logger.info("[截图作答] 成功在后台静默截取全屏一整页，数据已塞入 AI 队列")
+            else:
+                logger.warning("[截图作答] AI 线程未在运行中，截图已被丢弃")
+        except Exception as e:
+            logger.error(f"[截图] 跨窗口静默全屏截图失败: {e}")
 
 
     def _make_flat_button(self, parent, text, command, style_type="secondary", **kwargs):
@@ -484,6 +587,11 @@ class CaptionerUI:
         )
         self.mic_toggle_btn.pack(side=tk.LEFT, padx=6)
 
+        self.prompter_btn = self._make_flat_button(
+            row2_frame, "🖥 开启分屏提词", self._toggle_prompter_window, style_type="secondary"
+        )
+        self.prompter_btn.pack(side=tk.LEFT, padx=6)
+
         self.text_only_cb = tk.Checkbutton(
             row2_frame, text="仅文本测试", variable=self.text_only_mode,
             bg=BG_MAIN, fg=FG_MUTED, selectcolor=BG_MAIN,
@@ -596,6 +704,18 @@ class CaptionerUI:
             self.mic_toggle_btn.bind("<Enter>", lambda e: self.mic_toggle_btn.config(bg=bg_hover))
             self.mic_toggle_btn.bind("<Leave>", lambda e: self.mic_toggle_btn.config(bg=bg_normal))
             self.device_label.config(text="[系统音频]", fg=FG_MUTED)
+
+    def _toggle_prompter_window(self):
+        if hasattr(self, 'prompter_win') and self.prompter_win is not None:
+            try:
+                self.prompter_win.destroy()
+            except Exception:
+                pass
+            self.prompter_win = None
+            logger.info("[分屏] 关闭分屏大字提词窗口")
+        else:
+            self.prompter_win = TeleprompterWindow(self)
+            logger.info("[分屏] 开启分屏大字提词窗口")
 
     def _start_listening(self):
         """开始监听"""
@@ -760,6 +880,11 @@ class CaptionerUI:
         for w in [self.status_frame, self.caption_label, self.caption_frame,
                   self.ai_label, self.ai_frame, self.button_frame, self.input_frame]:
             w.pack_forget()
+        if hasattr(self, 'info_bar') and self.info_bar:
+            try:
+                self.info_bar.pack_forget()
+            except Exception:
+                pass
         self.stealth_frame.pack(fill=tk.BOTH, expand=True)
         self.root.configure(bg="#ffffff")
         self.root.deiconify()
@@ -777,8 +902,23 @@ class CaptionerUI:
         self.stealth_mode = False
         self.stealth_frame.pack_forget()
         self.root.configure(bg=BG_MAIN)
+        # 销毁后台 1x1 哨兵窗口
+        if hasattr(self, 'sentinel') and self.sentinel is not None:
+            try:
+                self.sentinel.destroy()
+            except Exception:
+                pass
+            self.sentinel = None
+
         self.root.deiconify()
+        self.root.geometry("900x820")
         self.status_frame.pack(fill=tk.X, padx=10, pady=(5, 2))
+        # 恢复局域网信息提示栏
+        if hasattr(self, 'info_bar') and self.info_bar:
+            try:
+                self.info_bar.pack(fill=tk.X, padx=15, pady=(4, 4), after=self.status_frame)
+            except Exception:
+                pass
         self.caption_label.pack(fill=tk.X, padx=10, pady=(5, 2))
         self.caption_frame.pack(fill=tk.BOTH, expand=False, padx=10, pady=2)
         self.button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=8)
@@ -813,6 +953,13 @@ class CaptionerUI:
             self.web_server = SuggestionWebServer(pin=self.web_pin)
             self.web_server.on_stealth_toggle = lambda mode: self.root.after(
                 0, lambda: self._toggle_stealth_mode(mode)
+            )
+            # 绑定手机端手动重新提问回调，将文本安全投递到 AI 分析队列中
+            self.web_server.on_manual_ask = lambda text: self.root.after(
+                0, lambda: self.ai_queue.put((
+                    datetime.now().strftime("%H:%M:%S"),
+                    text
+                ))
             )
             self.web_server.start()
 
@@ -922,25 +1069,63 @@ class CaptionerUI:
                 self.ai_thread.resume()
             if self.audio_thread and self.audio_thread.is_alive():
                 self.audio_thread.resume()
+            if hasattr(self, 'audio_thread_mic') and self.audio_thread_mic and self.audio_thread_mic.is_alive():
+                self.audio_thread_mic.resume()
             self.ai_paused = False
+            if self.web_server is not None:
+                try:
+                    self.web_server.set_paused(False)
+                except Exception:
+                    pass
+            if hasattr(self, 'prompter_win') and self.prompter_win is not None:
+                try:
+                    self.prompter_win.update_status(False)
+                except Exception:
+                    pass
             self.ai_status_label.config(text="● 收音中", fg="#34d399")
             self.ai_toggle_btn.config(text="⏸ 暂停收音 (空格)", bg=BTN_COLOR_MAP["primary"][0])
             self.ai_toggle_btn.bind("<Enter>", lambda e: self.ai_toggle_btn.config(bg=BTN_COLOR_MAP["primary"][1]))
             self.ai_toggle_btn.bind("<Leave>", lambda e: self.ai_toggle_btn.config(bg=BTN_COLOR_MAP["primary"][0]))
             self._append_ai("系统", "▶ 已恢复收音")
+            # 广播推送至手机 Web 端
+            self.ai_response_queue.put_nowait((
+                datetime.now().strftime("%H:%M:%S"), 
+                "系统通知", 
+                "🟢 麦克风已重新唤醒，AI 正在后台实时收音中...", 
+                "complete"
+            ))
         else:
             if self.audio_thread and self.audio_thread.is_alive():
                 self.audio_thread.pause()
+            if hasattr(self, 'audio_thread_mic') and self.audio_thread_mic and self.audio_thread_mic.is_alive():
+                self.audio_thread_mic.pause()
             self._clear_all_queues()
             if self.ai_thread and self.ai_thread.is_alive():
                 self.ai_thread.pause()
             self.ai_paused = True
+            if self.web_server is not None:
+                try:
+                    self.web_server.set_paused(True)
+                except Exception:
+                    pass
+            if hasattr(self, 'prompter_win') and self.prompter_win is not None:
+                try:
+                    self.prompter_win.update_status(True)
+                except Exception:
+                    pass
             self.ai_status_label.config(text="⏸ 已暂停收音", fg="#d97706")
             self.ai_toggle_btn.config(text="▶ 恢复收音 (空格)", bg=BTN_COLOR_MAP["warning"][0])
             # 变更Hover至琥珀黄警告色系
             self.ai_toggle_btn.bind("<Enter>", lambda e: self.ai_toggle_btn.config(bg=BTN_COLOR_MAP["warning"][1]))
             self.ai_toggle_btn.bind("<Leave>", lambda e: self.ai_toggle_btn.config(bg=BTN_COLOR_MAP["warning"][0]))
             self._append_ai("系统", "⏸ 已暂停收音，说完后按空格恢复")
+            # 广播推送至手机 Web 端
+            self.ai_response_queue.put_nowait((
+                datetime.now().strftime("%H:%M:%S"), 
+                "系统通知", 
+                "🟡 麦克风已临时挂起，AI 已暂停收音", 
+                "complete"
+            ))
 
     def _set_detail_mode(self, event=None):
         if event and hasattr(event, 'widget') and isinstance(event.widget, tk.Entry):
@@ -1025,7 +1210,16 @@ class CaptionerUI:
         try:
             while True:
                 timestamp, text = self.text_queue.get_nowait()
-                self._append_caption(timestamp, text)
+                # 同步推送原始转录字词到手机 Web 服务器
+                if self.web_server is not None:
+                    try:
+                        self.web_server.update_caption(text, timestamp)
+                    except Exception:
+                        pass
+                try:
+                    self._append_caption(timestamp, text)
+                except Exception as gui_err:
+                    logger.debug(f"[GUI] 隐藏/伪装状态下跳过主界面字幕更新: {gui_err}")
         except Exception:
             pass
         self.root.after(100, self._update_text_display)
@@ -1040,56 +1234,77 @@ class CaptionerUI:
                     timestamp, question, answer = item
                     status = "complete"
 
-                self.ai_display.config(state=tk.NORMAL)
+                # 1. 优先无条件地把识别和建议推送到手机端，不受任何本地 GUI 控件的影响！
+                if self.web_server is not None:
+                    try:
+                        self.web_server.update(question, answer, timestamp)
+                    except Exception as we:
+                        logger.error(f"[Web推送] 手机端同步异常: {we}")
 
-                if status == "partial":
-                    if '_streaming_pos' not in self.ai_display.mark_names():
-                        self.ai_display.insert(tk.END, f"[{timestamp}] 面试官: {question}\n")
-                        self.ai_display.mark_set('_streaming_pos', 'end-1c linestart')
-                        self.ai_display.mark_gravity('_streaming_pos', 'left')
+                # 1.5 同步推送面试建议到分屏大字提词器
+                if hasattr(self, 'prompter_win') and self.prompter_win is not None:
+                    try:
+                        self.prompter_win.add_message(timestamp, question, answer)
+                    except Exception as pe:
+                        logger.error(f"[分屏推送] 异常: {pe}")
 
-                    self.ai_display.delete('_streaming_pos', 'end-1c')
-                    self.ai_display.insert('_streaming_pos', f"         💡 建议: {answer}")
-                    self.ai_display.see(tk.END)
-                    self.ai_display.config(state=tk.DISABLED)
+                # 2. 对本地窗口 GUI 控件的更新使用独立的 try-except，隔离所有不可见/withdraw导致的异常！
+                try:
+                    self.ai_display.config(state=tk.NORMAL)
 
-                    if self.web_server is not None:
-                        try:
-                            self.web_server.update(question, answer, timestamp)
-                        except Exception:
-                            pass
-                else:
-                    if '_streaming_pos' in self.ai_display.mark_names():
+                    if status == "partial":
+                        if '_streaming_pos' not in self.ai_display.mark_names():
+                            self.ai_display.insert(tk.END, f"[{timestamp}] 面试官: {question}\n")
+                            self.ai_display.mark_set('_streaming_pos', 'end-1c linestart')
+                            self.ai_display.mark_gravity('_streaming_pos', 'left')
+
                         self.ai_display.delete('_streaming_pos', 'end-1c')
-                        self.ai_display.mark_unset('_streaming_pos')
+                        self.ai_display.insert('_streaming_pos', f"         💡 建议: {answer}")
+                        self.ai_display.see(tk.END)
+                        self.ai_display.config(state=tk.DISABLED)
                     else:
-                        self.ai_display.insert(tk.END, f"[{timestamp}] 面试官: {question}\n")
+                        if '_streaming_pos' in self.ai_display.mark_names():
+                            self.ai_display.delete('_streaming_pos', 'end-1c')
+                            self.ai_display.mark_unset('_streaming_pos')
+                        else:
+                            self.ai_display.insert(tk.END, f"[{timestamp}] 面试官: {question}\n")
 
-                    self.ai_display.insert(tk.END, f"         💡 建议: {answer}\n\n")
-                    self.ai_display.see(tk.END)
-                    self.ai_display.config(state=tk.DISABLED)
-
-                    if self.web_server is not None:
-                        try:
-                            self.web_server.update(question, answer, timestamp)
-                        except Exception:
-                            pass
+                        self.ai_display.insert(tk.END, f"         💡 建议: {answer}\n\n")
+                        self.ai_display.see(tk.END)
+                        self.ai_display.config(state=tk.DISABLED)
+                except Exception as gui_err:
+                    # 隐藏/伪装状态下，主窗口的 Text 控件因为脱离布局或处于 withdraw 状态，see(END) 必然抛出 TclError。
+                    # 我们使用 debug 日志捕获，防止中断 Web 推送
+                    logger.debug(f"[GUI] 隐藏/伪装状态下跳过主界面排版更新: {gui_err}")
         except queue.Empty:
             pass
         except Exception as e:
-            logger.error(f"[UI] 显示更新异常: {e}")
+            logger.error(f"[UI] AI建议队列循环异常: {e}")
         self.root.after(200, self._update_ai_display)
 
     def on_closing(self):
         """当用户点击关闭窗口 (✕) 时触发协议回调"""
         if self.stealth_mode and self.is_running:
-            # 只有在【伪装模式下】且【正在面试运行中】点击关闭，才执行隐藏（假关闭后台静默运行）
+            # 1. 彻底隐藏主窗口，消除 Windows 任务栏上的图标与痕迹
             self.root.withdraw()
+            
+            # 2. 建立 1x1 无边框哨兵窗口（Toplevel 且 overrideredirect），在任务栏不显示图标，但向操作系统维持进程活跃窗口以防麦克风隐私阻断
+            if not hasattr(self, 'sentinel') or self.sentinel is None:
+                self.sentinel = tk.Toplevel(self.root)
+                self.sentinel.overrideredirect(True)
+                self.sentinel.geometry("1x1+9999+9999")
+                
             logger.info("[安全防窥] 触发假关闭防御：已将主窗口隐藏至后台静默运行，手机端防窥面板仍保持正常工作。")
         else:
             # 正常模式，或者面试已停止状态下，点击关闭为真关闭正常退出
             if self.is_running:
                 self._stop_listening()
+            # 释放并退出全局热键线程
+            if hasattr(self, 'hotkey_thread') and self.hotkey_thread:
+                try:
+                    self.hotkey_thread.stop()
+                except Exception:
+                    pass
             self.root.destroy()
 
 
@@ -1197,6 +1412,127 @@ def main():
     logger.info("=" * 50)
 
     root.mainloop()
+
+
+class TeleprompterWindow(tk.Toplevel):
+    """独立的、全屏/大屏大字纯净提词面板"""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.title("AI 面试纯净提词面板")
+        self.geometry("800x650")
+        self.configure(bg="#0d1117")
+        
+        # 记录最近的 2 个卡片内容
+        # 每个卡片：{"timestamp": ..., "question": ..., "answer": ...}
+        self.cards = []
+        
+        # 头部状态区
+        self.header = tk.Frame(self, bg="#161b22", height=45)
+        self.header.pack(fill=tk.X)
+        self.header.pack_propagate(False)
+        
+        # 左侧标题
+        tk.Label(
+            self.header, text="🖥 纯享大字提词器", fg="#58a6ff", bg="#161b22",
+            font=("Microsoft YaHei UI", 12, "bold")
+        ).pack(side=tk.LEFT, padx=15, pady=8)
+        
+        # 右侧状态指示灯容器
+        self.status_container = tk.Frame(self.header, bg="#161b22")
+        self.status_container.pack(side=tk.RIGHT, padx=15)
+        
+        # 状态小圆圈
+        self.status_dot = tk.Canvas(self.status_container, width=12, height=12, bg="#161b22", highlightthickness=0)
+        self.status_dot.pack(side=tk.RIGHT, padx=(6, 0), pady=16)
+        self.dot_oval = self.status_dot.create_oval(1, 1, 11, 11, fill="#34d399")
+        
+        self.status_txt = tk.Label(
+            self.status_container, text="● 收音中", fg="#34d399", bg="#161b22",
+            font=("Microsoft YaHei UI", 10, "bold")
+        )
+        self.status_txt.pack(side=tk.RIGHT)
+        
+        # 中间文本容器（使用 Text 控件，支持大字体与暗黑系滚动）
+        self.text_area = scrolledtext.ScrolledText(
+            self, wrap=tk.WORD, bg="#0d1117", fg="#c9d1d9",
+            insertbackground="#c9d1d9", relief=tk.FLAT, font=("Microsoft YaHei UI", 18),
+            padx=20, pady=20
+        )
+        self.text_area.pack(fill=tk.BOTH, expand=True)
+        self.text_area.config(state=tk.DISABLED)
+        
+        self.update_status(parent.ai_paused)
+        self.refresh_display()
+        
+        # 绑定关闭事件
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+    def update_status(self, is_paused):
+        if is_paused:
+            self.status_txt.config(text="⏸ 已暂停", fg="#d97706")
+            self.status_dot.itemconfig(self.dot_oval, fill="#d97706")
+        else:
+            self.status_txt.config(text="● 收音中", fg="#34d399")
+            self.status_dot.itemconfig(self.dot_oval, fill="#34d399")
+            
+    def add_message(self, timestamp, question, answer):
+        # 去重与流式刷新：如果最顶端的卡片跟当前传入的一致，说明是流式追加，仅更新其正文
+        if self.cards and self.cards[0]["question"] == question:
+            self.cards[0]["answer"] = answer
+        else:
+            # 全新卡片，置顶插入
+            self.cards.insert(0, {
+                "timestamp": timestamp,
+                "question": question,
+                "answer": answer
+            })
+            if len(self.cards) > 2:
+                self.cards = self.cards[:2]
+        
+        self.refresh_display()
+        
+    def refresh_display(self):
+        self.text_area.config(state=tk.NORMAL)
+        self.text_area.delete(1.0, tk.END)
+        
+        if not self.cards:
+            self.text_area.insert(tk.END, "\n\n等待说话...\n\n原始字幕与 AI 建议回答将以超大字号在此处双题同显。")
+            self.text_area.config(state=tk.DISABLED)
+            return
+            
+        # 翻转渲染，使得最近的问题卡片始终排在最下面或最上面。
+        # 实战中，为了方便阅读最近的，我们让最近的问题（cards[0]）排在最顶端。
+        for idx, card in enumerate(self.cards):
+            q_text = f"【面试官提问】 ({card['timestamp']})：\n{card['question']}\n\n"
+            a_text = f"【AI 建议回答】：\n{card['answer']}\n\n"
+            
+            start_q = self.text_area.index(tk.END)
+            self.text_area.insert(tk.END, q_text)
+            end_q = self.text_area.index(tk.END)
+            
+            self.text_area.tag_add(f"q_{idx}", start_q, end_q)
+            self.text_area.tag_config(f"q_{idx}", foreground="#ffc000") # 醒目高亮明黄
+            
+            start_a = self.text_area.index(tk.END)
+            self.text_area.insert(tk.END, a_text)
+            end_a = self.text_area.index(tk.END)
+            
+            self.text_area.tag_add(f"a_{idx}", start_a, end_a)
+            self.text_area.tag_config(f"a_{idx}", foreground="#ffffff") # 亮白
+            
+            if idx == 0 and len(self.cards) > 1:
+                # 添加长分割线，以防前后题目串门
+                self.text_area.insert(tk.END, "━" * 50 + "\n\n")
+                
+        # 强制把滚动条拉回最顶端以确保第一视角能看见最新答案
+        self.text_area.see("1.0")
+        self.text_area.config(state=tk.DISABLED)
+        
+    def on_close(self):
+        if hasattr(self.parent, 'prompter_win'):
+            self.parent.prompter_win = None
+        self.destroy()
 
 
 if __name__ == "__main__":

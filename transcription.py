@@ -81,6 +81,15 @@ class TranscriptionThread(threading.Thread):
                         disable_update=True,
                     )
                     TranscriptionThread._shared_postprocess = rich_transcription_postprocess
+                    
+                    # 强力防御：强制将 PyTorch 模型所有权重转换为全精度 Float32，杜绝任何 Half 与 Float 冲突的混杂现象
+                    if hasattr(TranscriptionThread._shared_model, "model") and TranscriptionThread._shared_model.model is not None:
+                        try:
+                            TranscriptionThread._shared_model.model.float()
+                            logger.info("已强制将 SenseVoice 内部 PyTorch 模型转换为全精度 Float32")
+                        except Exception as fe:
+                            logger.warning(f"强制转换模型参数为 float32 失败: {fe}")
+                    
                     logger.info("SenseVoice 语音识别模型首次加载完成并已常驻内存！")
                 else:
                     logger.info("SenseVoice 语音识别模型已就绪，直接复用缓存对象。")
@@ -96,99 +105,104 @@ class TranscriptionThread(threading.Thread):
         frame_count = 0
 
         while not self._stop_event.is_set():
-            audio_chunk = None
-            audio_chunk_mic = None
+            try:
+                audio_chunk = None
+                audio_chunk_mic = None
 
-            if self.audio_queue_mic is None:
-                # 1. 单通道模式：直接阻塞获取主队列，闲置时 CPU 占用率为 0%
-                try:
-                    audio_chunk = self.audio_queue.get(timeout=0.1)
-                except Exception:
+                if self.audio_queue_mic is None:
+                    # 1. 单通道模式：直接阻塞获取主队列，闲置时 CPU 占用率为 0%
+                    try:
+                        audio_chunk = self.audio_queue.get(timeout=0.1)
+                    except Exception:
+                        continue
+                else:
+                    # 2. 双通道合流模式：自适应两路防抖对齐，避免空轮询吃满 CPU
+                    try:
+                        # 先以极短超时探测主队列（Speaker）
+                        audio_chunk = self.audio_queue.get(timeout=0.02)
+                    except Exception:
+                        pass
+
+                    try:
+                        if audio_chunk is not None:
+                            # 主队列拿到了，麦克风队列执行非阻塞快速获取
+                            audio_chunk_mic = self.audio_queue_mic.get_nowait()
+                        else:
+                            # 主队列空，麦克风队列执行带超时的客观阻塞获取，维持线程挂起休眠
+                            audio_chunk_mic = self.audio_queue_mic.get(timeout=0.02)
+                    except Exception:
+                        pass
+
+                    # 若两路均无数据，说明当前没有任何声音帧，继续等待
+                    if audio_chunk is None and audio_chunk_mic is None:
+                        continue
+
+                    # 3. 执行时域物理矢量混音合流，保持音频波形时序上的绝对连续性
+                    if audio_chunk is not None and audio_chunk_mic is not None:
+                        min_len = min(len(audio_chunk), len(audio_chunk_mic))
+                        audio_chunk = audio_chunk[:min_len] + audio_chunk_mic[:min_len]
+                    elif audio_chunk is None:
+                        audio_chunk = audio_chunk_mic
+
+                rms = np.sqrt(np.mean(audio_chunk ** 2))
+                if np.isnan(rms) or np.isinf(rms):
+                    rms = 0.0
+
+                # 1. 环境底噪自适应校准 (启动前30帧，约0.9秒内进行估计)
+                if not self.noise_calibrated:
+                    self.noise_frames.append(rms)
+                    if len(self.noise_frames) >= 30:
+                        valid_noise = [n for n in self.noise_frames if not np.isnan(n) and not np.isinf(n)]
+                        if not valid_noise:
+                            valid_noise = [0.006]
+                        mean_rms = np.mean(valid_noise)
+                        std_rms = np.std(valid_noise)
+                        # 动态阈值 = 噪声均值 + 3.5倍标准差
+                        calibrated = float(mean_rms + 3.5 * std_rms)
+                        if np.isnan(calibrated) or np.isinf(calibrated):
+                            calibrated = 0.006
+                        # 设限制幅限制，防止底噪异常偏高或偏低
+                        self.silence_threshold = float(np.clip(calibrated, 0.003, 0.015))
+                        self.noise_calibrated = True
+                        logger.info(f"[VAD] 环境底噪校准完成: 均值={mean_rms:.6f}, 标准差={std_rms:.6f} -> 判定阈值设为={self.silence_threshold:.6f}")
                     continue
-            else:
-                # 2. 双通道合流模式：自适应两路防抖对齐，避免空轮询吃满 CPU
-                try:
-                    # 先以极短超时探测主队列（Speaker）
-                    audio_chunk = self.audio_queue.get(timeout=0.02)
-                except Exception:
-                    pass
 
-                try:
-                    if audio_chunk is not None:
-                        # 主队列拿到了，麦克风队列执行非阻塞快速获取
-                        audio_chunk_mic = self.audio_queue_mic.get_nowait()
+                frame_count += 1
+                if frame_count % 33 == 0:
+                    status = "🎤" if rms > self.silence_threshold else "🔇"
+                    logger.debug(f"[VAD-调试] 当前 RMS={rms:.6f} {status}")
+
+                # 2. 正常语音活动探测 (VAD)
+                if rms > self.silence_threshold:
+                    if not self.is_speaking:
+                        # 预缓冲：连续帧计数，达到阈值才正式开始说话
+                        self._speech_frame_count += 1
+                        self.audio_buffer.append(audio_chunk)
+                        if self._speech_frame_count >= self.speech_frame_min:
+                            self.is_speaking = True
+                            self.utterance_start_time = time.time()
+                            self.silence_counter = 0.0
+                            logger.info(f"[VAD] 侦测到语音开始 (连续 {self._speech_frame_count} 帧超阈值)")
                     else:
-                        # 主队列空，麦克风队列执行带超时的客观阻塞获取，维持线程挂起休眠
-                        audio_chunk_mic = self.audio_queue_mic.get(timeout=0.02)
-                except Exception:
-                    pass
-
-                # 若两路均无数据，说明当前没有任何声音帧，继续等待
-                if audio_chunk is None and audio_chunk_mic is None:
-                    continue
-
-                # 3. 执行时域物理矢量混音合流，保持音频波形时序上的绝对连续性
-                if audio_chunk is not None and audio_chunk_mic is not None:
-                    min_len = min(len(audio_chunk), len(audio_chunk_mic))
-                    audio_chunk = audio_chunk[:min_len] + audio_chunk_mic[:min_len]
-                elif audio_chunk is None:
-                    audio_chunk = audio_chunk_mic
-
-            rms = np.sqrt(np.mean(audio_chunk ** 2))
-            if np.isnan(rms) or np.isinf(rms):
-                rms = 0.0
-
-            # 1. 环境底噪自适应校准 (启动前30帧，约0.9秒内进行估计)
-            if not self.noise_calibrated:
-                self.noise_frames.append(rms)
-                if len(self.noise_frames) >= 30:
-                    valid_noise = [n for n in self.noise_frames if not np.isnan(n) and not np.isinf(n)]
-                    if not valid_noise:
-                        valid_noise = [0.006]
-                    mean_rms = np.mean(valid_noise)
-                    std_rms = np.std(valid_noise)
-                    # 动态阈值 = 噪声均值 + 3.5倍标准差
-                    calibrated = float(mean_rms + 3.5 * std_rms)
-                    if np.isnan(calibrated) or np.isinf(calibrated):
-                        calibrated = 0.006
-                    # 设限制幅限制，防止底噪异常偏高或偏低
-                    self.silence_threshold = float(np.clip(calibrated, 0.003, 0.015))
-                    self.noise_calibrated = True
-                    logger.info(f"[VAD] 环境底噪校准完成: 均值={mean_rms:.6f}, 标准差={std_rms:.6f} -> 判定阈值设为={self.silence_threshold:.6f}")
-                continue
-
-            frame_count += 1
-            if frame_count % 33 == 0:
-                status = "🎤" if rms > self.silence_threshold else "🔇"
-                logger.debug(f"[VAD-调试] 当前 RMS={rms:.6f} {status}")
-
-            # 2. 正常语音活动探测 (VAD)
-            if rms > self.silence_threshold:
-                if not self.is_speaking:
-                    # 预缓冲：连续帧计数，达到阈值才正式开始说话
-                    self._speech_frame_count += 1
-                    self.audio_buffer.append(audio_chunk)
-                    if self._speech_frame_count >= self.speech_frame_min:
-                        self.is_speaking = True
-                        self.utterance_start_time = time.time()
+                        self.audio_buffer.append(audio_chunk)
                         self.silence_counter = 0.0
-                        logger.info(f"[VAD] 侦测到语音开始 (连续 {self._speech_frame_count} 帧超阈值)")
                 else:
-                    self.audio_buffer.append(audio_chunk)
-                    self.silence_counter = 0.0
-            else:
-                if not self.is_speaking:
-                    # 还没达到连续帧要求就遇到静默，重置预缓冲
-                    self._speech_frame_count = 0
-                    self.audio_buffer = []
-                else:
-                    self.audio_buffer.append(audio_chunk)
-                    self.silence_counter += frame_duration
-                    if self.silence_counter >= self.silence_duration:
-                        self._process_utterance()
-                    elapsed = time.time() - self.utterance_start_time
-                    if elapsed >= self.max_utterance:
-                        self._process_utterance()
+                    if not self.is_speaking:
+                        # 还没达到连续帧要求就遇到静默，重置预缓冲
+                        self._speech_frame_count = 0
+                        self.audio_buffer = []
+                    else:
+                        self.audio_buffer.append(audio_chunk)
+                        self.silence_counter += frame_duration
+                        if self.silence_counter >= self.silence_duration:
+                            self._process_utterance()
+                        elapsed = time.time() - self.utterance_start_time
+                        if elapsed >= self.max_utterance:
+                            self._process_utterance()
+            except Exception as loop_err:
+                logger.error(f"[转录核心] 运行期捕获异常，已自动复位继续: {loop_err}", exc_info=True)
+                self.clear_state()
+                time.sleep(0.5)
 
         self.running = False
         logger.info("转录线程停止")
@@ -216,6 +230,9 @@ class TranscriptionThread(threading.Thread):
         if max_val > 1e-4:
             # 自动拉伸弱音振幅到标准的 0.8 峰值，防范会议降噪导致的音量微弱，提升 ASR 识别率 20%+
             audio_np = audio_np * (0.8 / max_val)
+
+        # 3. 强制转换音频数组为标准 float32 单精度，防范双音合流混音或 VAD mean 消除带来的 float64 污染，杜绝 PyTorch 出现 Float 与 Half 冲突报错。
+        audio_np = audio_np.astype(np.float32)
 
         try:
             res = self.model.generate(

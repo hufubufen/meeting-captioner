@@ -128,8 +128,8 @@ class AIAnalysisThread(threading.Thread):
     # ------------------------------------------------------------------
     _INTRO_PATTERNS = [
         r'自我介绍',
-        r'介绍.{0,3}(?:自己|一下.{0,2}你自己|你自己)',
-        r'(?:说说|谈谈|讲一下|讲下).{0,3}你.*自己',
+        r'介绍.{0,3}(?:自己|一下.{0,2}你自己|你自己)(?:吧|哈|呗)?$',
+        r'(?:说说|谈谈|讲一下|讲下).{0,3}(?:自己|一下.{0,2}你自己|引导.{0,2}自己)(?:吧|哈|呗)?$',
     ]
     _DURATION_MAP = {
         '5min': ['五分钟', '5分钟', '5min', '详细', '展开'],
@@ -153,6 +153,77 @@ class AIAnalysisThread(threading.Thread):
         return False
 
     @classmethod
+    def _is_post_interview_ask_question(cls, question):
+        import re
+        q = question.strip()
+        patterns = [
+            r'有什么想问我', r'有什么想问的', r'有什么要问', r'有什么问题想问',
+            r'有什么问题问我', r'你有什么想问', r'你有什么问题', r'你有什么想了解',
+            r'想问我什么', r'反问我', r'反问面试官'
+        ]
+        for pat in patterns:
+            if re.search(pat, q):
+                return True
+        return False
+
+    @classmethod
+    def _extract_all_post_asks_from_kb(cls, kb_text):
+        import re
+        parts = re.split(r'(?:\r?\n|^)##\s*Q[：:]\s*', kb_text)
+        if len(parts) <= 1:
+            return None
+            
+        # 1. 优先使用最具专业代表性的五大核心反问维度进行精准匹配
+        target_kws = ['如果只能问一个问题', '岗位核心方向', '算法设计到落地的流程', '如果想问数据闭环', '实习生前期工作']
+        questions_found = []
+        
+        for kw in target_kws:
+            for part in parts[1:]:
+                lines = part.split('\n')
+                if not lines:
+                    continue
+                q_title = lines[0].strip()
+                if kw in q_title:
+                    content_tail = '\n'.join(lines[1:])
+                    a_m = re.search(r'(?:\r?\n|^)(?:A[：:])\s*(.*)', content_tail)
+                    if a_m:
+                        a_text = a_m.group(1).strip()
+                        end_m = re.search(r'\n(?:---|##|Q[：:]|<br>)', a_text)
+                        if end_m:
+                            a_text = a_text[:end_m.start()].strip()
+                        a_text = re.sub(r'^(?:A[：:])\s*', '', a_text).strip()
+                        if a_text and a_text not in questions_found:
+                            questions_found.append(a_text)
+                            break
+                            
+        # 2. 如果未能精准命中核心维度（例如换成了其他非安维尔的知识库），则退化使用泛化模糊提取
+        if not questions_found:
+            for part in parts[1:]:
+                lines = part.split('\n')
+                if not lines:
+                    continue
+                q_title = lines[0].strip()
+                if any(kw in q_title for kw in ['怎么问', '问什么', '问我们', '问我的', '想问']):
+                    content_tail = '\n'.join(lines[1:])
+                    a_m = re.search(r'(?:\r?\n|^)(?:A[：:])\s*(.*)', content_tail)
+                    if a_m:
+                        a_text = a_m.group(1).strip()
+                        end_m = re.search(r'\n(?:---|##|Q[：:]|<br>)', a_text)
+                        if end_m:
+                            a_text = a_text[:end_m.start()].strip()
+                        a_text = re.sub(r'^(?:A[：:])\s*', '', a_text).strip()
+                        if a_text and a_text not in questions_found:
+                            questions_found.append(a_text)
+                            
+        if not questions_found:
+            return None
+            
+        res = ["谢谢您给我提问的机会。关于咱们团队和岗位，我有以下几个方面想向您请教："]
+        for idx, item in enumerate(questions_found[:5]):
+            res.append(f"{idx + 1}. {item}")
+        return "\n\n".join(res)
+
+    @classmethod
     def _intro_duration(cls, question):
         for dur, keywords in cls._DURATION_MAP.items():
             for kw in keywords:
@@ -164,9 +235,9 @@ class AIAnalysisThread(threading.Thread):
     def _extract_intro_from_kb(cls, kb_text, duration='3min'):
         import re
         marker_patterns = {
-            '1min': [r'1min版本', r'[一二三四五]、\s*1分钟\S*版本', r'1分钟\S*版本'],
-            '3min': [r'3min版本', r'[一二三四五]、\s*3分钟\S*版本', r'3分钟\S*版本'],
-            '5min': [r'5min版本', r'[一二三四五]、\s*5分钟\S*版本', r'5分钟\S*版本'],
+            '1min': [r'1\s*分钟\S*自我介绍', r'1min', r'[一二三四五]、\s*1分钟\S*版本', r'1分钟\S*版本', r'自我介绍'],
+            '3min': [r'3\s*分钟\S*自我介绍', r'3min', r'[一二三四五]、\s*3分钟\S*版本', r'3分钟\S*版本', r'自我介绍'],
+            '5min': [r'5\s*分钟\S*自我介绍', r'5min', r'[一二三四五]、\s*5分钟\S*版本', r'5分钟\S*版本', r'自我介绍'],
         }
         patterns = marker_patterns.get(duration, marker_patterns['3min'])
 
@@ -183,13 +254,13 @@ class AIAnalysisThread(threading.Thread):
             return None
 
         tail = kb_text[idx + matched_len:]
-        m = re.search(r'(?:A：)?老师您好[^\n]*', tail)
+        m = re.search(r'(?:A[：:])?\s*(?:面试官|老师)?您好[^\n]*', tail)
         if not m:
             return None
 
         content = tail[m.start():]
         end_m = re.search(
-            r'\n(?:[一二三四五]?min版本|[一二三四五]、\s*\d分钟\S*版本|\d分钟\S*版本|Q[：:]|提示[：：]|总结|[一二三四五六七八九十]+[、，,])',
+            r'\n(?:[一二三四五]?min版本|[一二三四五]、\s*\d分钟\S*版本|\d分钟\S*版本|#+\s*Q[：:]|Q[：:]|\s*#|提示[：::]|总结|[一二三四五六七八九十]+[、，,])',
             content
         )
         if end_m:
@@ -574,9 +645,9 @@ class AIAnalysisThread(threading.Thread):
                 i += 1
                 continue
 
-            # 过滤掉原本的自我介绍问答对以避免冲突，自我介绍由直连处理器提取
-            if '自我介绍' in question:
-                continue
+            # 允许自我介绍载入通用 RAG 向量知识库中作为备用/直连兜底，不进行硬性过滤
+            # if '自我介绍' in question:
+            #     continue
 
             answer_lines = []
             while i < n:
@@ -877,9 +948,13 @@ class AIAnalysisThread(threading.Thread):
 
         # Stage 1: 语义向量粗排 Top 5
         candidates = self._embedding_scores(question, top_n=5)
+        
+        # 强力过滤：排除所有答案为空的虚拟触发句（它们只用于前面的意图分流拦截，不能用于常规 RAG 匹配输出）
+        candidates = [cand for cand in candidates if self._qa_pairs[cand[0]][1].strip()]
+        
         self._last_candidates = candidates
         if not candidates:
-            logger.info(f"[RAG] 语义检索无任何匹配: Q='{question[:40]}'")
+            logger.info(f"[RAG] 过滤空答案触发句后无匹配: Q='{question[:40]}'")
             return None
 
         best_idx, best_score = candidates[0]
@@ -958,16 +1033,37 @@ class AIAnalysisThread(threading.Thread):
 
         while not self._stop_event.is_set():
             try:
-                # 1. 阻塞获取第一条提问文本作为基准
-                timestamp, first_text = self.ai_queue.get(timeout=0.5)
+                # 1. 阻塞获取第一条提问消息作为基准（支持元组或多模态截图字典）
+                item = self.ai_queue.get(timeout=0.5)
             except Exception:
                 continue
 
             if self.paused:
                 continue
 
+            # 强力拦截：若是截图多模态作答包，立即绕过防抖，直接调用大模型分析并输出
+            if isinstance(item, dict) and "image_base64" in item:
+                img_ts = item["timestamp"]
+                img_b64 = item["image_base64"]
+                logger.info(f"[AI] 收到多模态截图作答数据，绕过防抖拼合，调用 {self.model} 进行分析...")
+                try:
+                    answer = self._call_qwen(question="【截图识别】", ai_timestamp=img_ts, image_base64=img_b64)
+                    if answer:
+                        self.ai_response_queue.put_nowait((img_ts, "【截图作答】", answer, "complete"))
+                        logger.info(f"[AI] 截图作答完毕")
+                except Exception as e:
+                    logger.error(f"[AI] 截图作答异常: {e}", exc_info=True)
+                continue
+
+            # 否则为常规 ASR 语音片段元组 (timestamp, text)
+            try:
+                timestamp, first_text = item
+            except Exception:
+                continue
+
             # 2. 开启自适应防抖拼合窗口
             coalesced_texts = [first_text.strip()]
+            coalesced_timestamps = [timestamp]
             last_recv_time = time.time()
             debounce_seconds = 1.2  # 1.2 秒内若有新片段涌入则持续聚合并重置防抖
 
@@ -980,10 +1076,28 @@ class AIAnalysisThread(threading.Thread):
                 try:
                     # 极短超时轮询后续分句
                     next_item = self.ai_queue.get(timeout=min(remaining, 0.1))
-                    _, next_text = next_item
+                    next_ts, next_text = next_item
+                    
+                    # 校验物理发生时间差，防止因网络 API 阻塞积压导致把相隔较远的两个独立问题错误熔断合并
+                    def get_sec(ts_str):
+                        try:
+                            parts = ts_str.split(':')
+                            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                        except Exception:
+                            return 0
+                    
+                    t1 = get_sec(coalesced_timestamps[-1])
+                    t2 = get_sec(next_ts)
+                    
+                    if abs(t2 - t1) > 1.5:
+                        # 物理发生间隔大于 1.5 秒，说明不是大喘气而是全新问题。把新消息重新放回队列，留到下一轮单独消费
+                        self.ai_queue.put(next_item)
+                        break
+
                     next_text_strip = next_text.strip()
                     if next_text_strip and next_text_strip not in coalesced_texts:
                         coalesced_texts.append(next_text_strip)
+                        coalesced_timestamps.append(next_ts)
                         last_recv_time = time.time()  # 重置时钟
                 except queue.Empty:
                     pass
@@ -1006,30 +1120,103 @@ class AIAnalysisThread(threading.Thread):
 
             logger.info(f"[AI防抖拼合] 聚合成句 (count={len(coalesced_texts)}) -> '{full_text}'")
 
+            ai_timestamp = datetime.now().strftime("%H:%M:%S")
             try:
-                answer = self._call_qwen(full_text)
+                answer = self._call_qwen(full_text, ai_timestamp)
             except Exception as e:
                 logger.error(f"[AI] 处理异常，跳过此提问: {e}", exc_info=True)
                 continue
 
             if answer:
-                ai_timestamp = datetime.now().strftime("%H:%M:%S")
                 self.ai_response_queue.put_nowait((ai_timestamp, full_text, answer, "complete"))
                 logger.info(f"[AI] 完成回答: {answer[:40]}...")
 
         self.running = False
         logger.info("AI 分析线程停止")
 
-    def _call_qwen(self, question):
-        """调用通义千问 API (优先使用语义直连分流)"""
+    def _call_qwen(self, question, ai_timestamp, image_base64=None):
+        """调用通义千问 API (优先使用语义直连分流，支持多模态截图作答)"""
+        # === 0. 优先处理多模态截图识别任务 ===
+        if image_base64:
+            logger.info(f"[AI多模态] 开始构建多模态 Request 请求，使用模型: {self.model}...")
+            system_content = (
+                "你是一个面试辅助助手。请识别图片中的题目内容。\n"
+                "1. 如果是代码题，请给出完美的、符合生产环境标准的 C++/Python/Java/Go 代码，并在代码后附带简要的逻辑思路说明。\n"
+                "2. 如果是选择题、简答题或概念题，请直截了当给出最佳选项/答案及解析说明。\n"
+                "直接回答核心内容，不需要任何客套和解释性前缀。"
+            )
+            
+            messages = [
+                {"role": "system", "content": system_content},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "请仔细识别并回答以下图片中的题目。"},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                    ]
+                }
+            ]
+            
+            try:
+                partial_text = []
+                # 截图涉及代码等，最大 Token 容量拓宽至 1500
+                max_tokens = 1500
+                stream = self.client.chat.completions.create(
+                    model="qwen-vl-max",
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    stream=True,
+                    timeout=30,
+                )
+                
+                for chunk in stream:
+                    delta = chunk.choices[0].delta.content if chunk.choices else None
+                    if delta:
+                        partial_text.append(delta)
+                        partial_answer = "".join(partial_text)
+                        try:
+                            self.ai_response_queue.put_nowait((
+                                ai_timestamp, "【截图作答】", partial_answer, "partial"
+                            ))
+                        except Exception:
+                            pass
+                
+                answer = "".join(partial_text).strip()
+                return answer if answer else "[未收到回复内容]"
+            except Exception as call_err:
+                logger.error(f"[AI多模态] 图片识别请求失败: {call_err}")
+                return f"[调用异常] {call_err}"
+
         if not hasattr(self, '_qa_intents') or self._qa_intents is None:
             self._qa_intents = {}
 
         # === 1. 语义直连分流拦截机制（向量/BGE 相似度匹配） ===
         intent_tag = None
         best_score = 0.0
+        # 优先通过正则模式直接判定是否为自我介绍问题，实现高鲁棒性直连
+        if self._is_self_intro_question(question):
+            intent_tag = "self_intro"
+            best_score = 1.0
+            extracted = self._execute_intent_handler(intent_tag, question)
+            if extracted:
+                logger.info(f"[意图分流] 正则直接命中自我介绍直连 -> 直接输出本地原文")
+                with self._history_lock:
+                    self.conversation_history.append({"role": "user", "content": f"面试官说：{question}"})
+                    self.conversation_history.append({"role": "assistant", "content": extracted})
+                return extracted
+        # 优先判定是否为面试反问阶段，实现多合一聚合直连输出
+        elif self._is_post_interview_ask_question(question):
+            intent_tag = "post_interview_ask"
+            best_score = 1.0
+            extracted = self._execute_intent_handler(intent_tag, question)
+            if extracted:
+                logger.info(f"[意图分流] 正则直接命中面试反问直连 -> 聚合输出所有反问问题")
+                with self._history_lock:
+                    self.conversation_history.append({"role": "user", "content": f"面试官说：{question}"})
+                    self.conversation_history.append({"role": "assistant", "content": extracted})
+                return extracted
         
-        if self._index_ready:
+        elif self._index_ready:
             candidates = self._embedding_scores(question, top_n=3)
             if candidates:
                 best_idx, best_score = candidates[0]
@@ -1037,7 +1224,7 @@ class AIAnalysisThread(threading.Thread):
                 intent_tag = self._qa_intents.get(matched_q)
                 
                 # 只有固定背诵的内容（如自我介绍 self_intro）才允许不经大模型直接快速输出本地原文
-                if intent_tag == "self_intro" and best_score >= 0.50:
+                if intent_tag == "self_intro" and best_score >= 0.70:
                     extracted = self._execute_intent_handler(intent_tag, question)
                     if extracted:
                         logger.info(f"[意图分流] 语义命中自我介绍直连 (score={best_score:.4f}) -> 直接输出本地原文")
@@ -1054,7 +1241,15 @@ class AIAnalysisThread(threading.Thread):
             rag_result = self._find_best_qa_match(question)
             if isinstance(rag_result, tuple) and rag_result[0] is not None:
                 (kb_q, kb_a), score = rag_result
-                # 强力防御：不再直接返回本地硬编码原文（防止死板答非所问），而是作为高优先级背景注入大模型进行自适应融合生成
+                # 高置信度直接拦截拦截：若得分 >= 0.55，视为高匹配原题，直接输出本地原文，杜绝大模型自我挥洒
+                if score >= 0.55:
+                    logger.info(f"[RAG直接拦截] 语义匹配得分 {score:.4f} >= 0.55 -> 严格字面对齐，直接输出知识库答案原文")
+                    with self._history_lock:
+                        self.conversation_history.append({"role": "user", "content": f"面试官说：{question}"})
+                        self.conversation_history.append({"role": "assistant", "content": kb_a})
+                    return kb_a
+
+                # 低置信度匹配，作为上下文注入大模型自适应融合生成
                 logger.info(f"[RAG] 命中相关知识库问题 (score={score:.4f}) -> 转化为高优先级上下文注入大模型自适应融合生成")
                 direct_kb_context = f"【精选直接相关知识参考】\n提问: {kb_q}\n官方答案原文: {kb_a}\n\n"
 
@@ -1109,7 +1304,6 @@ class AIAnalysisThread(threading.Thread):
             partial_text = []
             retry_count = 0
             max_retries = 2
-            ai_timestamp = datetime.now().strftime("%H:%M:%S")
 
             while retry_count <= max_retries:
                 try:
@@ -1162,7 +1356,14 @@ class AIAnalysisThread(threading.Thread):
         """执行特化意图的数据抽取"""
         if intent_tag == "self_intro":
             duration = self._intro_duration(question)
-            return self._extract_intro_from_kb(self.knowledge_base_text, duration)
+            res = self._extract_intro_from_kb(self.knowledge_base_text, duration)
+            if not res and duration != '3min':
+                res = self._extract_intro_from_kb(self.knowledge_base_text, '3min')
+            if not res and duration != '1min':
+                res = self._extract_intro_from_kb(self.knowledge_base_text, '1min')
+            return res
+        elif intent_tag == "post_interview_ask":
+            return self._extract_all_post_asks_from_kb(self.knowledge_base_text)
         return None
 
     def clear_history(self):

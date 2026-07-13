@@ -24,19 +24,51 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 .stealth-btn{padding:8px 20px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid #30363d;transition:all .2s}
 .stealth-btn.on{background:#da3633;color:#fff;border-color:#da3633}
 .stealth-btn.off{background:#238636;color:#fff;border-color:#238636}
+
+/* 手机端纯净面试提词器专属覆盖样式 (字号依旧保持 13px，不放大，只全屏隐藏杂项) */
+body.mode-pure .header,
+body.mode-pure .caption-bar,
+body.mode-pure .stealth-bar,
+body.mode-pure .input-bar,
+body.mode-pure .scroll-status,
+body.mode-pure .footer {
+  display: none !important;
+}
+body.mode-pure #pureStatusDot {
+  display: block !important;
+}
+body.mode-pure .content {
+  padding-top: 20px !important;
+  padding-bottom: 20px !important;
+  height: 100vh !important;
+  box-sizing: border-box;
+}
 </style>
 </head>
-<body ondblclick="toggleAutoScroll()">
-<div class="header">
+<body>
+<!-- 右上角麦克风悬浮状态灯 (纯净模式下显现，点击一键退回普通界面) -->
+<div id="pureStatusDot" onclick="togglePureMode()" style="display:none;position:fixed;top:12px;right:16px;width:12px;height:12px;border-radius:50%;background:#3fb950;z-index:9999;box-shadow:0 0 8px rgba(63,185,80,0.6);cursor:pointer;"></div>
+<div class="header" style="position:relative;">
   <h1>AI 面试辅助</h1>
   <div class="timestamp"><span class="status-dot"></span><span id="ts">等待面试官提问...</span></div>
+  <!-- 右上角麦克风状态灯 (普通模式下显现，绿色=收音中, 橙黄=已暂停) -->
+  <div id="micStatusDot" style="position:absolute;top:18px;right:18px;width:10px;height:10px;border-radius:50%;background:#3fb950;box-shadow:0 0 6px rgba(63,185,80,0.5);"></div>
+</div>
+<div class="caption-bar" style="background:#161b22;padding:8px 16px;border-bottom:1px solid #30363d;font-size:12px;color:#8b949e;display:flex;align-items:center;gap:6px;">
+  <span style="color:#58a6ff;font-weight:bold;white-space:nowrap;">🎤 实时转录:</span>
+  <span id="captionText" style="color:#3fb950;word-break:break-all;font-style:italic;">等待说话...</span>
 </div>
 <div class="stealth-bar" style="display:flex;border-bottom:1px solid #30363d;">
-  <button class="stealth-btn off" id="stealthBtn" onclick="toggleStealth()" style="flex:1;border-radius:0;border:none;border-right:1px solid #30363d;">🖥 伪装模式</button>
-  <button class="stealth-btn" id="scrollBtn" onclick="toggleAutoScroll()" style="flex:1;border-radius:0;border:none;background:#21262d;color:#8b949e;">开启自动慢滚</button>
+  <button class="stealth-btn off" id="stealthBtn" onclick="toggleStealth()" style="flex:1;border-radius:0;border:none;border-right:1px solid #30363d;font-size:11px;">🖥 伪装模式</button>
+  <button class="stealth-btn" id="scrollBtn" onclick="toggleAutoScroll()" style="flex:1;border-radius:0;border:none;border-right:1px solid #30363d;background:#21262d;color:#8b949e;font-size:11px;">开启自动慢滚</button>
+  <button class="stealth-btn" id="pureBtn" onclick="togglePureMode()" style="flex:1;border-radius:0;border:none;background:#21262d;color:#8b949e;font-size:11px;">👁️ 纯净提词</button>
+</div>
+<div class="input-bar" style="background:#161b22;padding:8px 12px;border-bottom:1px solid #30363d;display:flex;gap:6px;align-items:center;">
+  <input type="text" id="phoneInput" placeholder="✍️ 没录准？在此微调或手写提问重新发送" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:6px 10px;font-size:12px;outline:none;">
+  <button onclick="sendPhoneQuestion()" style="background:#238636;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:500;">发送</button>
 </div>
 <div class="scroll-status" id="scrollIndicator" style="background:#161b22;padding:6px 16px;border-bottom:1px solid #30363d;font-size:11px;color:#8b949e;text-align:center;">
-  💡 提示：双击手机屏幕可直接开关“慢速滚屏提词器”
+  💡 提示：双击手机屏幕开关慢滚，三击屏幕可开关“纯净提词器”
 </div>
 <div class="content" id="content">
   <div class="empty">
@@ -88,15 +120,84 @@ function toggleAutoScroll() {
   }
 }
 
+window._lastMsgId = "";
+function handleNewMessage(d) {
+  // 1. 同步更新麦克风状态灯 (支持双界面状态小圆圈同步)
+  if(d.hasOwnProperty("ai_paused")) {
+    var dot1 = document.getElementById("micStatusDot");
+    var dot2 = document.getElementById("pureStatusDot");
+    if(d.ai_paused) {
+      if(dot1) { dot1.style.background = "#d97706"; dot1.style.boxShadow = "0 0 6px rgba(217,119,6,0.5)"; }
+      if(dot2) { dot2.style.background = "#d97706"; dot2.style.boxShadow = "0 0 8px rgba(217,119,6,0.6)"; }
+    } else {
+      if(dot1) { dot1.style.background = "#3fb950"; dot1.style.boxShadow = "0 0 6px rgba(63,185,80,0.5)"; }
+      if(dot2) { dot2.style.background = "#3fb950"; dot2.style.boxShadow = "0 0 8px rgba(63,185,80,0.6)"; }
+    }
+  }
+
+  // 2. 同步更新网页端实时转录字幕气泡
+  if(d.caption_text) {
+    document.getElementById("captionText").textContent = "[" + d.caption_timestamp + "] " + d.caption_text;
+  }
+
+  if(!d.question) return;
+
+  var msgId = d.timestamp + "_" + d.question;
+  var contentDiv = document.getElementById("content");
+
+  // 3. 实时刷新系统时间戳
+  document.getElementById("ts").textContent = d.timestamp;
+
+  // 4. 同一题的流式动态更新：只更新最上方已生成卡片的内容，避免重复生成卡片
+  if(msgId === window._lastMsgId) {
+    var firstCard = contentDiv.firstElementChild;
+    if(firstCard) {
+      var answerDiv = firstCard.querySelector(".answer");
+      if(answerDiv) {
+        answerDiv.innerHTML = esc(d.answer);
+      }
+    }
+    return;
+  }
+
+  // 5. 发现了全新的提问或全新的通知广播，进入追加置顶流程：
+  window._lastMsgId = msgId;
+
+  if(contentDiv.querySelector(".empty")){
+    contentDiv.innerHTML = "";
+  }
+
+  var cardHtml = "";
+  if(d.question === "系统通知") {
+    cardHtml = '<div class="card" style="background:#1f2937;border-color:#3b82f6;opacity:0.9;margin-bottom:10px;padding:12px;">' +
+               '<div class="card-label" style="color:#60a5fa;font-weight:bold;font-size:11px;margin-bottom:4px;">📢 系统广播</div>' +
+               '<div class="answer" style="font-size:13px;color:#cbd5e1;line-height:1.5;">' + esc(d.answer) + '</div>' +
+               '</div>';
+  } else {
+    cardHtml = '<div class="card" style="margin-bottom:10px;padding:12px;">' +
+               '<div class="card-label" style="color:#f0883e;font-weight:bold;font-size:11px;margin-bottom:4px;">🏋️ 面试官问题</div>' +
+               '<div class="question" style="font-size:13px;color:#f0883e;line-height:1.5;margin-bottom:8px;">' + esc(d.question) + '</div>' +
+               '<div class="card-label" style="color:#58a6ff;font-weight:bold;font-size:11px;border-top:1px solid #30363d;padding-top:6px;margin-top:6px;margin-bottom:4px;">💡 AI 建议回答</div>' +
+               '<div class="answer" style="font-size:13px;color:#c9d1d9;line-height:1.5;">' + esc(d.answer) + '</div>' +
+               '</div>';
+  }
+
+  var tempDiv = document.createElement("div");
+  tempDiv.innerHTML = cardHtml;
+  contentDiv.insertBefore(tempDiv.firstChild, contentDiv.firstChild);
+
+  // 6. 核心机制：只保留最近的 2 个卡片（最上面的卡片是最新的，下面的卡片是旧一点的）
+  while(contentDiv.children.length > 2){
+    contentDiv.removeChild(contentDiv.lastChild);
+  }
+
+  // 7. 焦点复位触顶
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
 function poll(){
   fetch("/api/latest?key="+window._pin).then(r=>{if(!r.ok){throw "auth";}}).then(r=>r.json()).then(d=>{
-    if(!d.question) return;
-    document.getElementById("ts").textContent=d.timestamp;
-    var h="";
-    if(d.question){h+='<div class="card"><div class="card-label">\u{1f3cb} \u{9762}\u{8bd5}\u{5b98}\u{95ee}\u{9898}</div><div class="question">'+esc(d.question)+'</div></div>';}
-    if(d.answer){h+='<div class="card"><div class="card-label">\u{1f4a1} AI \u{5efa}\u{8bae}</div><div class="answer">'+esc(d.answer)+'</div></div>';}
-    document.getElementById("content").innerHTML=h||'<div class="empty"><div class="icon">\u{1f3a4}</div><div>\u{7b49}\u{5f85}\u{9762}\u{8bd5}\u{5b98}\u{63d0}\u{95ee}...</div></div>';
-    autoScrollToBottom();
+    handleNewMessage(d);
   }).catch(()=>{});
 }
 function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML;}
@@ -105,15 +206,12 @@ function startSSE(){
   evtSource=new EventSource("/api/stream?key="+window._pin);
   evtSource.onmessage=function(e){
     var d=JSON.parse(e.data);
-    if(!d.question) return;
-    document.getElementById("ts").textContent=d.timestamp;
-    var h="";
-    if(d.question){h+='<div class="card"><div class="card-label">\u{1f3cb} \u{9762}\u{8bd5}\u{5b98}\u{95ee}\u{9898}</div><div class="question">'+esc(d.question)+'</div></div>';}
-    if(d.answer){h+='<div class="card"><div class="card-label">\u{1f4a1} AI \u{5efa}\u{8bae}</div><div class="answer">'+esc(d.answer)+'</div></div>';}
-    document.getElementById("content").innerHTML=h||'<div class="empty"><div class="icon">\u{1f3a4}</div><div>\u{7b49}\u{5f85}\u{9762}\u{8bd5}\u{5b98}\u{63d0}\u{95ee}...</div></div>';
-    autoScrollToBottom();
+    handleNewMessage(d);
   };
-  evtSource.onerror=function(){evtSource.close();setTimeout(startPoll,1000);};
+  evtSource.onerror=function(){
+    evtSource.close();
+    setTimeout(startPoll,1000);
+  };
 }
 function startPoll(){setInterval(poll,500);poll();}
 startSSE();
@@ -137,6 +235,66 @@ function updateStealthBtn(on){
   }
 }
 fetch("/api/stealth?key="+window._pin).then(r=>r.json()).then(d=>{updateStealthBtn(d.stealth_mode);});
+
+function sendPhoneQuestion() {
+  var inp = document.getElementById("phoneInput");
+  var txt = inp.value.trim();
+  if(!txt) return;
+  fetch("/api/ask?key=" + window._pin + "&text=" + encodeURIComponent(txt))
+    .then(r => r.json())
+    .then(d => {
+      if(d.status === "ok") {
+        inp.value = "";
+        // 瞬间向卡片流顶部插入一条“正在加载”的临时占位卡片，给候选人最佳的视觉反馈
+        handleNewMessage({
+          timestamp: new Date().toTimeString().split(' ')[0],
+          question: "手动提问: " + txt,
+          answer: "⏳ AI 建议正在重新紧急生成中，请保持手机唤醒..."
+        });
+      }
+    });
+}
+document.getElementById("phoneInput").addEventListener("keydown", function(e){
+  if(e.key === "Enter") sendPhoneQuestion();
+});
+window._isPureMode = false;
+function togglePureMode() {
+  window._isPureMode = !window._isPureMode;
+  var btn = document.getElementById("pureBtn");
+  if(window._isPureMode) {
+    document.body.classList.add("mode-pure");
+    btn.textContent = "👁️ 退出纯净";
+    btn.style.background = "#da3633";
+    btn.style.color = "#fff";
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  } else {
+    document.body.classList.remove("mode-pure");
+    btn.textContent = "👁️ 纯净提词";
+    btn.style.background = "#21262d";
+    btn.style.color = "#8b949e";
+  }
+}
+
+// 劫持双击与三击手势，实现完全自然的手机操控：
+// 双击 -> 开关自动慢滚
+// 三击 -> 开关纯净提词器
+var clickCount = 0;
+var clickTimer = null;
+document.addEventListener("click", function(e){
+  if(e.target.tagName === "INPUT" || e.target.tagName === "BUTTON" || e.target.closest(".input-bar")) {
+    return;
+  }
+  clickCount++;
+  if(clickTimer) clearTimeout(clickTimer);
+  clickTimer = setTimeout(function(){
+    if(clickCount === 2) {
+      toggleAutoScroll();
+    } else if(clickCount === 3) {
+      togglePureMode();
+    }
+    clickCount = 0;
+  }, 280);
+});
 </script>
 </body>
 </html>
